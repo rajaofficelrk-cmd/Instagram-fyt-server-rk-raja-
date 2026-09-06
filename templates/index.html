@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Raja Server</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: #050505;
+            color: #00ff66;
+            font-family: monospace;
+        }
+
+        .container {
+            width: 94%;
+            max-width: 700px;
+            margin: 20px auto;
+        }
+
+        .title {
+            text-align: center;
+            border: 1px solid #00ff66;
+            border-radius: 18px;
+            padding: 22px 12px;
+            margin-bottom: 15px;
+            box-shadow: 0 0 20px #00ff6630;
+        }
+
+        .title h1 {
+            margin: 0;
+            font-size: 22px;
+            line-height: 1.6;
+            word-break: break-word;
+        }
+
+        .online {
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        .card {
+            background: #090909;
+            border: 1px solid #00ff6644;
+            border-radius: 15px;
+            padding: 18px;
+            margin-bottom: 15px;
+        }
+
+        h3 {
+            margin-top: 0;
+        }
+
+        input[type="text"],
+        input[type="file"] {
+            width: 100%;
+            padding: 14px;
+            margin: 8px 0 12px;
+            background: #000;
+            color: #00ff66;
+            border: 1px solid #00ff6688;
+            border-radius: 10px;
+            font-family: monospace;
+        }
+
+        input[type="file"] {
+            padding: 11px;
+        }
+
+        button {
+            border: 1px solid #00ff66;
+            background: #001a0b;
+            color: #00ff66;
+            padding: 12px 17px;
+            border-radius: 10px;
+            margin: 4px;
+            font-family: monospace;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #003d18;
+        }
+
+        button:active {
+            transform: scale(.96);
+        }
+
+        .buttons {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .buttons form {
+            display: inline-block;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .stat {
+            border: 1px solid #00ff6633;
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .number {
+            display: block;
+            font-size: 27px;
+            margin-top: 7px;
+        }
+
+        .progress {
+            width: 100%;
+            height: 23px;
+            border: 1px solid #00ff66;
+            border-radius: 20px;
+            overflow: hidden;
+            margin-top: 18px;
+            background: #000;
+        }
+
+        .bar {
+            height: 100%;
+            width: {{ ((state.processed / state.total) * 100) if state.total else 0 }}%;
+            background: #00ff66;
+            transition: width .4s ease;
+        }
+
+        .status {
+            text-align: center;
+            font-size: 19px;
+            margin: 5px 0 15px;
+        }
+
+        .info {
+            line-height: 1.8;
+            word-break: break-all;
+        }
+
+        .small {
+            color: #7affaa;
+            font-size: 12px;
+        }
+
+        .footer {
+            text-align: center;
+            opacity: .6;
+            font-size: 11px;
+            padding: 10px;
+        }
+
+        @media (max-width: 500px) {
+
+            .container {
+                width: 95%;
+                margin-top: 12px;
+            }
+
+            .title h1 {
+                font-size: 18px;
+            }
+
+            .card {
+                padding: 15px;
+            }
+
+            button {
+                flex: 1;
+                min-width: 100px;
+            }
+        }
+    </style>
+</head>
+
+
+<body>
+
+<div class="container">
+
+
+    <!-- HEADER -->
+
+    <div class="title">
+
+        <h1>
+            ◄⸻̅͟ˣ͠𓆩𝐑꯭꘍꯭֟፝͡᪂꘍꯭ 𝐋꯭𖾝ԍ𖾝꯭֟፝͡᎔꯭𑀘𓆪꯭ˣ͢
+        </h1>
+
+        <div class="online">
+            🟢 SERVER ONLINE
+        </div>
+
+    </div>
+
+
+    <!-- ADD ID / NAME -->
+
+    <div class="card">
+
+        <h3>
+            👤 ADD ID / NAME
+        </h3>
+
+        <form
+            action="/add"
+            method="POST"
+        >
+
+            <input
+                type="text"
+                name="item"
+                placeholder="Enter ID or name..."
+                autocomplete="off"
+                required
+            >
+
+            <button type="submit">
+                ➕ ADD
+            </button>
+
+        </form>
+
+    </div>
+
+
+    <!-- FILE UPLOAD -->
+
+    <div class="card">
+
+        <h3>
+            📁 UPLOAD TXT / CSV
+        </h3>
+
+        <form
+            action="/upload"
+            method="POST"
+            enctype="multipart/form-data"
+        >
+
+            <input
+                type="file"
+                name="file"
+                accept=".txt,.csv"
+                required
+            >
+
+            <button type="submit">
+                📤 UPLOAD
+            </button>
+
+        </form>
+
+        <p class="small">
+            TXT: one ID/name per line
+        </p>
+
+        <p class="small">
+            CSV: first column will be used
+        </p>
+
+    </div>
+
+
+    <!-- CONTROLS -->
+
+    <div class="card">
+
+        <div class="status">
+
+            STATUS:
+
+            <strong>
+                {{ state.status|upper }}
+            </strong>
+
+        </div>
+
+
+        <div class="buttons">
+
+            <form action="/start" method="POST">
+                <button type="submit">
+                    ▶ START
+                </button>
+            </form>
+
+
+            <form action="/pause" method="POST">
+                <button type="submit">
+                    ⏸ PAUSE
+                </button>
+            </form>
+
+
+            <form action="/stop" method="POST">
+                <button type="submit">
+                    🛑 STOP
+                </button>
+            </form>
+
+
+            <form
+                action="/clear"
+                method="POST"
+                onsubmit="return confirm('Clear current job?');"
+            >
+                <button type="submit">
+                    🗑 CLEAR
+                </button>
+            </form>
+
+        </div>
+
+    </div>
+
+
+    <!-- STATISTICS -->
+
+    <div class="card">
+
+        <div class="stats">
+
+            <div class="stat">
+                TOTAL
+                <span class="number">
+                    {{ state.total }}
+                </span>
+            </div>
+
+
+            <div class="stat">
+                PROCESSED
+                <span class="number">
+                    {{ state.processed }}
+                </span>
+            </div>
+
+
+            <div class="stat">
+                SUCCESS
+                <span class="number">
+                    {{ state.success }}
+                </span>
+            </div>
+
+
+            <div class="stat">
+                FAILED
+                <span class="number">
+                    {{ state.failed }}
+                </span>
+            </div>
+
+        </div>
+
+
+        <div class="progress">
+
+            <div class="bar"></div>
+
+        </div>
+
+
+        <p style="text-align:center;">
+
+            {{ state.processed }}
+            /
+            {{ state.total }}
+
+        </p>
+
+    </div>
+
+
+    <!-- SERVER INFORMATION -->
+
+    <div class="card">
+
+        <h3>
+            📡 SERVER INFO
+        </h3>
+
+        <div class="info">
+
+            <p>
+                Job ID:
+                <br>
+                {{ state.job_id or "None" }}
+            </p>
+
+            <p>
+                Last Update:
+                <br>
+                {{ state.updated_at or "None" }}
+            </p>
+
+            <p>
+                Message:
+                <br>
+                {{ state.message or "Waiting..." }}
+            </p>
+
+        </div>
+
+    </div>
+
+
+    <div class="footer">
+
+        ◄⸻̅͟ˣ͠𓆩 Raja Server 𓆪꯭ˣ͢
+
+    </div>
+
+
+</div>
+
+
+<script>
+
+    // Dashboard refresh
+    // Worker server-side independently chalta rahega.
+
+    setTimeout(function () {
+        location.reload();
+    }, 5000);
+
+</script>
+
+
+</body>
+
+</html>
