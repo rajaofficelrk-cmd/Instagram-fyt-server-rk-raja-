@@ -1,0 +1,12 @@
+{
+    "job_id": null,
+    "status": "idle",
+    "total": 0,
+    "processed": 0,
+    "success": 0,
+    "failed": 0,
+    "items": [],
+    "message": "",
+    "created_at": null,
+    "updated_at": null
+}
