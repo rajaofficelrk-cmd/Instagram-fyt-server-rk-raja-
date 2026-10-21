@@ -1,6 +1,6 @@
-# 💀 Instagram Bulk Sender Web App
+# 💀 Instagram Bulk Sender Web App (Node.js)
 
-एक पावरफुल और लाइटवेट **Instagram Direct Bulk Message Automation Tool** जो Flask (Python) बैकएंड और मॉडर्न रेस्पॉन्सिव UI (HTML/CSS/JS) पर आधारित है।
+एक पावरफुल और लाइटवेट **Instagram Direct Bulk Message Automation Tool** जो Node.js (Express), Axios और मॉडर्न रेस्पॉन्सिव UI पर आधारित है।
 
 ---
 
@@ -11,8 +11,8 @@
 ```text
 insta-bulk-sender/
 │
-├── app.py                  # मुख्य Python Flask बैकएंड सर्वर
-├── requirements.txt         # आवश्यक Python पैकेज
+├── index.js                # मुख्य Express बैकएंड सर्वर फ़ाइल
+├── package.json            # आवश्यक डिपेंडेंसी और स्क्रिप्ट्स
 ├── README.md               # प्रोजेक्ट की जानकारी (यह फ़ाइल)
-└── templates/
-    └── index.html          # फ्रंटएंड UI पेज
+└── public/
+    └── index.html          # फ्रंटएंड UI पेज (आपका एचटीएमएल पेज)
