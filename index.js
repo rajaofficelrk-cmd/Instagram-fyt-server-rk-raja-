@@ -1,177 +1,195 @@
-const express = require('express');
-const multer = require('multer');
-const axios = require('axios');
-const { v4: uuidv4 } = require('uuid');
-const fs = require('fs');
-const path = require('path');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>💀 Insta Bulk Sender</title>
+    <style>
+        :root { --bg: #0a0a0a; --card: rgba(20, 20, 20, 0.85); --border: #2a2a2a; --text: #e0e0e0; --accent: #ff0033; --green: #00cc66; --red: #ff3333; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Courier New', monospace; }
+        
+        /* ✅ BACKGROUND MEIN AAPKI PHOTO */
+        body { 
+            background-color: var(--bg);
+            background-image: url('https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            background-blend-mode: overlay;
+            color: var(--text); 
+            display: flex; 
+            justify-content: center; 
+            padding: 20px; 
+            min-height: 100vh; 
+        }
 
-const app = express();
-const upload = multer({ dest: 'uploads/' });
+        .container { 
+            background: var(--card); 
+            backdrop-filter: blur(10px); 
+            -webkit-backdrop-filter: blur(10px); 
+            border: 1px solid var(--border); 
+            border-radius: 12px; 
+            padding: 25px; 
+            width: 100%; 
+            max-width: 800px; 
+            box-shadow: 0 0 30px rgba(0,0,0,0.8); 
+        }
+        
+        /* ✅ HEADER MEIN AAPKI PHOTO */
+        .header-area { text-align: center; margin-bottom: 25px; display: flex; flex-direction: column; align-items: center;}
+        .header-area img { 
+            width: 120px; 
+            height: 120px; 
+            object-fit: cover; 
+            border-radius: 50%; 
+            margin-bottom: 15px; 
+            border: 3px solid var(--accent); 
+            box-shadow: 0 0 20px rgba(255, 0, 51, 0.6); 
+        }
+        .header-area p { color: #fff; font-weight: bold; letter-spacing: 2px; text-transform: uppercase; text-shadow: 0 0 10px #000; }
+        
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .full-width { grid-column: span 2; }
+        label { display: block; margin-bottom: 5px; color: #ccc; font-size: 0.85em; font-weight: bold; }
+        textarea, input { width: 100%; padding: 12px; background: rgba(0,0,0,0.8); border: 1px solid var(--border); border-radius: 6px; color: #fff; font-size: 14px; }
+        textarea:focus, input:focus { outline: none; border-color: var(--accent); }
+        .btn-group { display: flex; gap: 10px; margin-top: 20px; }
+        button { flex: 1; padding: 15px; border: none; border-radius: 6px; font-weight: bold; font-size: 16px; cursor: pointer; text-transform: uppercase; }
+        #startBtn { background: var(--green); color: #000; }
+        #stopBtn { background: var(--red); color: #fff; }
+        button:disabled { opacity: 0.3; cursor: not-allowed; }
+        .terminal { margin-top: 25px; background: rgba(0,0,0,0.9); border: 1px solid #333; border-radius: 8px; padding: 15px; height: 250px; overflow-y: auto; font-size: 13px; }
+        .log-success { color: var(--green); }
+        .log-error { color: var(--red); }
+        .status-bar { display: flex; justify-content: space-between; margin-top: 20px; padding: 15px; background: rgba(0,0,0,0.7); border-radius: 8px; border: 1px solid var(--border); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-area">
+            <img src="https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png" alt="Icon" onerror="this.src='https://via.placeholder.com/120/ff0033/ffffff?text=Insta'">
+            <p>Insta Bulk Sender</p>
+        </div>
 
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
-app.use(express.static('public'));
+        <form id="senderForm">
+            <div class="grid">
+                <div class="full-width">
+                    <label>🍪 Instagram Cookies (csrftoken=...; sessionid=...)</label>
+                    <textarea id="cookies" name="cookies" rows="3" placeholder="sessionid=...; ds_user_id=...; csrftoken=...;" required></textarea>
+                </div>
+                
+                <div>
+                    <label>👥 Thread ID (Group ya Chat ID)</label>
+                    <input type="text" id="thread_id" name="thread_id" placeholder="e.g. 3402823668..." required>
+                </div>
 
-// Server State Tracker
-let serverState = {
-    isRunning: false,
-    totalSent: 0,
-    totalFailed: 0,
-    logs: []
-};
-let stopFlag = false;
+                <div>
+                    <label>⏱️ Time Delay (Seconds)</label>
+                    <input type="number" id="time_delay" name="time_delay" value="10" min="5" required>
+                </div>
 
-function addLog(msg) {
-    const timestamp = new Date().toLocaleTimeString();
-    const logMsg = `[${timestamp}] ${msg}`;
-    serverState.logs.push(logMsg);
-    if (serverState.logs.length > 150) serverState.logs.shift();
-    console.log(logMsg);
-}
+                <div class="full-width">
+                    <label>🏷️ Here Name (Upar dikhega)</label>
+                    <input type="text" id="sender_name" name="sender_name" placeholder="I am here" required>
+                </div>
 
-function extractCsrf(cookiesStr) {
-    const match = cookiesStr.match(/csrftoken=([^;]+)/);
-    return match ? match[1].trim() : null;
-}
+                <div class="full-width">
+                    <label>📁 Upload Message File (.txt)</label>
+                    <input type="file" id="message_file" name="message_file" accept=".txt" required>
+                </div>
+            </div>
 
-async function sendInstaMessage(cookiesStr, threadId, text) {
-    const csrfToken = extractCsrf(cookiesStr);
-    if (!csrfToken) return { success: false, error: "CSRF token not found in cookies" };
+            <div class="btn-group">
+                <button type="button" id="startBtn">▶️ Start Process</button>
+                <button type="button" id="stopBtn" disabled>⏹️ Stop Process</button>
+            </div>
+        </form>
 
-    const url = "https://www.instagram.com/api/v1/direct_v2/threads/broadcast/text/";
-    const headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Cookie": cookiesStr,
-        "X-CSRFToken": csrfToken,
-        "X-IG-App-ID": "936619743392459",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "X-Requested-With": "XMLHttpRequest",
-        "Origin": "https://www.instagram.com",
-        "Referer": `https://www.instagram.com/direct/t/${threadId}/`
-    };
+        <div class="status-bar">
+            <div>Status: <span id="statusText">IDLE</span></div>
+            <div>Sent: <span id="sentCount" style="color:var(--green)">0</span> | Failed: <span id="failCount" style="color:var(--red)">0</span></div>
+        </div>
 
-    const payload = new URLSearchParams({
-        thread_ids: `[${threadId}]`,
-        text: text,
-        client_context: uuidv4()
-    });
+        <div class="terminal" id="terminal">
+            <div>> System ready.</div>
+        </div>
+    </div>
 
-    try {
-        // ✅ FIX: maxRedirects: 0 aur validateStatus lagaya hai taaki redirect loop crash na kare
-        const response = await axios.post(url, payload.toString(), { 
-            headers, 
-            timeout: 15000,
-            maxRedirects: 0, 
-            validateStatus: function (status) {
-                return status >= 200 && status < 400; // 200 se 399 tak accept karega
+    <script>
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const terminal = document.getElementById('terminal');
+        const statusText = document.getElementById('statusText');
+        const sentCountEl = document.getElementById('sentCount');
+        const failCountEl = document.getElementById('failCount');
+        const form = document.getElementById('senderForm');
+        let pollingInterval = null;
+
+        function printLog(msg, type = 'normal') {
+            const div = document.createElement('div');
+            if (type === 'error' || msg.includes('❌') || msg.includes('🛑')) {
+                div.className = 'log-error';
+            } else if (type === 'success' || msg.includes('✅') || msg.includes('🎉') || msg.includes('🚀')) {
+                div.className = 'log-success';
+            }
+            div.innerText = msg;
+            terminal.appendChild(div);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        async function checkStatus() {
+            try {
+                const res = await fetch('/api/status');
+                if (!res.ok) return;
+                const data = await res.json();
+                
+                statusText.innerText = data.isRunning ? 'RUNNING' : 'IDLE';
+                statusText.style.color = data.isRunning ? 'var(--green)' : 'var(--accent)';
+                sentCountEl.innerText = data.totalSent || 0;
+                failCountEl.innerText = data.totalFailed || 0;
+
+                if (data.logs && data.logs.length > 0) {
+                    terminal.innerHTML = ''; 
+                    data.logs.forEach(log => printLog(log));
+                }
+                startBtn.disabled = data.isRunning;
+                stopBtn.disabled = !data.isRunning;
+            } catch (err) {}
+        }
+
+        startBtn.addEventListener('click', async () => {
+            if (!form.checkValidity()) { form.reportValidity(); return; }
+            const formData = new FormData(form);
+            terminal.innerHTML = '';
+            startBtn.disabled = true;
+            printLog("> Starting server...", 'normal');
+
+            try {
+                const res = await fetch('/api/start', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.status === 'error') {
+                    alert(data.message);
+                    startBtn.disabled = false;
+                    return;
+                }
+                if (!pollingInterval) pollingInterval = setInterval(checkStatus, 2000);
+                checkStatus();
+            } catch (err) {
+                printLog("> ❌ Network Error connecting to server.", 'error');
+                startBtn.disabled = false;
             }
         });
 
-        // Agar Instagram redirect kar raha hai (Matlab login page pe bhej raha hai)
-        if (response.status >= 300 && response.status < 400) {
-            return { success: false, error: "Blocked! Instagram redirected to Login. (IP Block or Bad Cookies)" };
-        }
+        stopBtn.addEventListener('click', async () => {
+            stopBtn.disabled = true;
+            printLog("> Stopping execution...", 'error');
+            try { await fetch('/api/stop', { method: 'POST' }); } catch (e) {}
+        });
 
-        if (response.status === 200 && response.data && response.data.status === "ok") {
-            return { success: true };
-        } else {
-            return { success: false, error: `API Error: ${response.data?.message || 'Unknown'}` };
-        }
-    } catch (err) {
-        const errorMsg = err.response?.data?.message || err.message;
-        return { success: false, error: errorMsg };
-    }
-}
-
-async function runWorker(cookies, threadId, timeDelay, senderName, messages) {
-    serverState.isRunning = true;
-    serverState.totalSent = 0;
-    serverState.totalFailed = 0;
-    serverState.logs = [];
-    stopFlag = false;
-
-    addLog("> 🚀 Server task started...");
-
-    for (let i = 0; i < messages.length; i++) {
-        if (stopFlag) {
-            addLog("> 🛑 Execution stopped by user.");
-            break;
-        }
-
-        const fullMessage = `${senderName}\n${messages[i].trim()}`;
-        addLog(`> Sending message [${i + 1}/${messages.length}]...`);
-
-        const result = await sendInstaMessage(cookies, threadId, fullMessage);
-
-        if (result.success) {
-            serverState.totalSent++;
-            addLog("> ✅ Sent successfully!");
-        } else {
-            serverState.totalFailed++;
-            addLog(`> ❌ Failed: ${result.error}`);
-            
-            // Agar redirect/block error aaya toh thoda ruk kar agla message try karega
-            if (result.error.includes("Blocked")) {
-                addLog("> ⚠️ Stopping process due to Block/Redirect.");
-                break; 
-            }
-        }
-
-        if (i < messages.length - 1 && !stopFlag) {
-            addLog(`> ⏱️ Waiting ${timeDelay} seconds...`);
-            for (let s = 0; s < timeDelay; s++) {
-                if (stopFlag) break;
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-        }
-    }
-
-    serverState.isRunning = false;
-    addLog("> 🎉 Task finished.");
-}
-
-app.post('/api/start', upload.single('message_file'), async (req, res) => {
-    if (serverState.isRunning) {
-        return res.json({ status: "error", message: "Server is already running!" });
-    }
-
-    const { cookies, thread_id, sender_name } = req.body;
-    const timeDelay = parseInt(req.body.time_delay || 10);
-    const file = req.file;
-
-    if (!cookies || !thread_id || !file || !sender_name) {
-        return res.json({ status: "error", message: "All fields are required!" });
-    }
-
-    try {
-        const fileContent = fs.readFileSync(file.path, 'utf-8');
-        fs.unlinkSync(file.path); // Delete temp uploaded file
-        const messages = fileContent.split(/\r?\n/).filter(line => line.trim() !== '');
-
-        if (messages.length === 0) {
-            return res.json({ status: "error", message: "Message file is empty!" });
-        }
-
-        // Run background task
-        runWorker(cookies, thread_id, timeDelay, sender_name, messages);
-
-        res.json({ status: "success", message: "Started successfully" });
-    } catch (e) {
-        serverState.isRunning = false;
-        res.json({ status: "error", message: e.message });
-    }
-});
-
-app.post('/api/stop', (req, res) => {
-    stopFlag = true;
-    res.json({ status: "success", message: "Stopping..." });
-});
-
-app.get('/api/status', (req, res) => {
-    res.json(serverState);
-});
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
-});
+        window.onload = () => {
+            checkStatus();
+            pollingInterval = setInterval(checkStatus, 3000);
+        };
+    </script>
+</body>
+</html>
