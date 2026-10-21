@@ -19,7 +19,7 @@
         button { flex: 1; padding: 15px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
         #startBtn { background: var(--green); color: #000; }
         #stopBtn { background: var(--red); color: #fff; }
-        button:disabled { opacity: 0.3; }
+        button:disabled { opacity: 0.3; cursor: not-allowed; }
         .terminal { margin-top: 25px; background: #000; border: 1px solid #333; border-radius: 8px; padding: 15px; height: 250px; overflow-y: auto; font-size: 13px; }
         .log-success { color: var(--green); }
         .log-error { color: var(--red); }
@@ -29,19 +29,19 @@
 <body>
     <div class="container">
         <div class="header-area">
-            <img src="https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png" alt="Icon">
+            <img src="https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png" alt="Icon" onerror="this.src='https://via.placeholder.com/120/ff0033/ffffff?text=Insta'">
             <p>Insta Bulk Sender</p>
         </div>
 
         <form id="senderForm">
             <div class="grid">
                 <div class="full-width">
-                    <label>🍪 Instagram Cookies (sessionid=...; ds_user_id=...)</label>
-                    <textarea id="cookies" name="cookies" rows="3" placeholder="sessionid=...; ds_user_id=...; csrftoken=...; ig_did=..." required></textarea>
+                    <label>🍪 Instagram Cookies (csrftoken=...; sessionid=...)</label>
+                    <textarea id="cookies" name="cookies" rows="3" placeholder="sessionid=...; ds_user_id=...; csrftoken=...;" required></textarea>
                 </div>
                 
                 <div>
-                    <label>👥 Thread ID (Group ya IB)</label>
+                    <label>👥 Thread ID (Group ya Chat ID)</label>
                     <input type="text" id="thread_id" name="thread_id" placeholder="e.g. 3402823668..." required>
                 </div>
 
@@ -51,7 +51,7 @@
                 </div>
 
                 <div class="full-width">
-                    <label>🏷️ Here Name (Upar dikhega)</label>
+                    <label>🏷️ Prefix Name (Message ke aage lagega)</label>
                     <input type="text" id="sender_name" name="sender_name" placeholder="I am here" required>
                 </div>
 
@@ -62,8 +62,8 @@
             </div>
 
             <div class="btn-group">
-                <button type="button" id="startBtn">▶️ Run Server</button>
-                <button type="button" id="stopBtn" disabled>⏹️ Stop Server</button>
+                <button type="button" id="startBtn">▶️ Start Process</button>
+                <button type="button" id="stopBtn" disabled>⏹️ Stop Process</button>
             </div>
         </form>
 
@@ -78,68 +78,139 @@
     </div>
 
     <script>
-        const form = document.getElementById('senderForm');
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
         const terminal = document.getElementById('terminal');
-        let pollingInterval = null;
+        const statusText = document.getElementById('statusText');
+        const sentCountEl = document.getElementById('sentCount');
+        const failCountEl = document.getElementById('failCount');
 
-        function printLog(msg) {
+        let isRunning = false;
+        let sentCount = 0;
+        let failCount = 0;
+
+        function printLog(msg, type = 'normal') {
             const div = document.createElement('div');
-            if (msg.includes('✅') || msg.includes('🎉')) div.className = 'log-success';
-            if (msg.includes('❌') || msg.includes('🛑')) div.className = 'log-error';
+            if (type === 'success' || msg.includes('✅')) div.className = 'log-success';
+            if (type === 'error' || msg.includes('❌') || msg.includes('🛑')) div.className = 'log-error';
             div.innerText = msg;
             terminal.appendChild(div);
             terminal.scrollTop = terminal.scrollHeight;
         }
 
-        async function checkStatus() {
-            const res = await fetch('/api/status');
-            const data = await res.json();
-            document.getElementById('statusText').innerText = data.isRunning ? 'RUNNING' : 'IDLE';
-            document.getElementById('sentCount').innerText = data.totalSent;
-            document.getElementById('failCount').innerText = data.totalFailed;
-            startBtn.disabled = data.isRunning;
-            stopBtn.disabled = !data.isRunning;
-            if (data.logs.length > 0) {
-                terminal.innerHTML = '';
-                data.logs.forEach(log => printLog(log));
-            }
+        function extractCsrfToken(cookieString) {
+            const match = cookieString.match(/csrftoken=([^;]+)/);
+            return match ? match[1] : null;
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        async function sendInstagramMessage(threadId, text, cookieStr, csrfToken) {
+            // Instagram Direct Text Broadcast Endpoint
+            const url = `https://www.instagram.com/api/v1/direct_v2/threads/broadcast/text/`;
+            
+            const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+
+            const formData = new URLSearchParams();
+            formData.append('thread_ids', `[${threadId}]`);
+            formData.append('text', text);
+            formData.append('client_context', uuid);
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData.toString()
+            });
+
+            return response.ok;
         }
 
         startBtn.addEventListener('click', async () => {
-            if (!form.checkValidity()) { form.reportValidity(); return; }
-            const formData = new FormData(form);
-            terminal.innerHTML = '';
-            startBtn.disabled = true;
-            printLog("> Starting server...");
+            const cookies = document.getElementById('cookies').value.trim();
+            const threadId = document.getElementById('thread_id').value.trim();
+            const timeDelay = parseInt(document.getElementById('time_delay').value) * 1000;
+            const senderName = document.getElementById('sender_name').value.trim();
+            const fileInput = document.getElementById('message_file');
 
-            try {
-                const res = await fetch('/api/start', { method: 'POST', body: formData });
-                const data = await res.json();
-                if (data.status === 'error') {
-                    alert(data.message);
-                    startBtn.disabled = false;
-                    return;
-                }
-                if (!pollingInterval) pollingInterval = setInterval(checkStatus, 2000);
-                checkStatus();
-            } catch (err) {
-                printLog("> ❌ Network Error.");
-                startBtn.disabled = false;
+            if (!cookies || !threadId || !fileInput.files.length) {
+                alert("Please fill all required fields!");
+                return;
             }
-        });
 
-        stopBtn.addEventListener('click', async () => {
+            const csrfToken = extractCsrfToken(cookies);
+            if (!csrfToken) {
+                printLog("> ❌ Error: CSRF token not found in cookies! Make sure 'csrftoken=...' exists.", 'error');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const fileText = await file.text();
+            const messages = fileText.split('\n').filter(line => line.trim() !== '');
+
+            if (messages.length === 0) {
+                printLog("> ❌ File is empty!", 'error');
+                return;
+            }
+
+            isRunning = true;
+            startBtn.disabled = true;
+                stopBtn.disabled = false;
+            statusText.innerText = 'RUNNING';
+            printLog(`> 🚀 Starting process... Total messages: ${messages.length}`);
+
+            for (let i = 0; i < messages.length; i++) {
+                if (!isRunning) {
+                    printLog("> 🛑 Process stopped by user.", 'error');
+                    break;
+                }
+
+                const fullMsg = `${senderName} : ${messages[i].trim()}`;
+                printLog(`> Sending [${i+1}/${messages.length}]: "${fullMsg}"`);
+
+                try {
+                    const success = await sendInstagramMessage(threadId, fullMsg, cookies, csrfToken);
+                    if (success) {
+                        sentCount++;
+                        sentCountEl.innerText = sentCount;
+                        printLog(`> ✅ Sent successfully!`, 'success');
+                    } else {
+                        failCount++;
+                        failCountEl.innerText = failCount;
+                        printLog(`> ❌ Failed to send. (Check ID or Cookies)`, 'error');
+                    }
+                } catch (err) {
+                    failCount++;
+                    failCountEl.innerText = failCount;
+                    printLog(`> ❌ Network/CORS Error: Instagram API access blocked by browser.`, 'error');
+                }
+
+                if (i < messages.length - 1 && isRunning) {
+                    printLog(`> ⏱️ Waiting ${timeDelay/1000} seconds...`);
+                    await sleep(timeDelay);
+                }
+            }
+
+            isRunning = false;
+            startBtn.disabled = false;
             stopBtn.disabled = true;
-            printLog("> Sending stop signal...");
-            try { await fetch('/api/stop', { method: 'POST' }); } catch (e) {}
+            statusText.innerText = 'IDLE';
+            printLog("> 🎉 Task completed.");
         });
 
-        window.onload = () => {
-            checkStatus();
-            pollingInterval = setInterval(checkStatus, 5000);
-        };
+        stopBtn.addEventListener('click', () => {
+            isRunning = false;
+            stopBtn.disabled = true;
+            printLog("> Stopping execution...");
+        });
     </script>
 </body>
 </html>
