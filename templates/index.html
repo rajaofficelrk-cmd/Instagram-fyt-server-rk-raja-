@@ -3,19 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><♕✫ Rk Rʌȷ͜͡ʌ✫⤹Tʀɪ‌‌c‌‌ƙɜʀ⤸ insta server 🎯/title>
+    <title>♕✫ Rk Rʌȷ͜͡ʌ✫⤹Tʀɪ‌‌c‌‌ƙɜʀ ❤️ </title>
     <style>
         :root { --bg: #0a0a0a; --card: rgba(20, 20, 20, 0.85); --border: #2a2a2a; --text: #e0e0e0; --accent: #ff0033; --green: #00cc66; --red: #ff3333; }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Courier New', monospace; }
         
-        /* ✅ BACKGROUND MEIN AAPKI PHOTO */
+        /* ✅ BACKGROUND IMAGE WITH FALLBACK */
         body { 
             background-color: var(--bg);
             background-image: url('https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png');
             background-size: cover;
             background-position: center;
             background-attachment: fixed;
-            background-blend-mode: overlay; /* Photo ko dark karne ke liye taaki text dikhe */
+            background-blend-mode: overlay;
             color: var(--text); 
             display: flex; 
             justify-content: center; 
@@ -23,21 +23,19 @@
             min-height: 100vh; 
         }
 
-        /* ✅ GLASS EFFECT CONTAINER */
         .container { 
             background: var(--card); 
-            backdrop-filter: blur(12px); /* Background photo ko blur karega */
-            -webkit-backdrop-filter: blur(12px);
+            backdrop-filter: blur(10px); 
+            -webkit-backdrop-filter: blur(10px); 
             border: 1px solid var(--border); 
             border-radius: 12px; 
             padding: 25px; 
             width: 100%; 
             max-width: 800px; 
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.7);
+            box-shadow: 0 0 30px rgba(0,0,0,0.8); 
         }
-
-        /* ✅ HEADER MEIN AAPKI PHOTO */
-        .header-area { text-align: center; margin-bottom: 25px; display: flex; flex-direction: column; align-items: center; }
+        
+        .header-area { text-align: center; margin-bottom: 25px; display: flex; flex-direction: column; align-items: center;}
         .header-area img { 
             width: 120px; 
             height: 120px; 
@@ -45,46 +43,30 @@
             border-radius: 50%; 
             margin-bottom: 15px; 
             border: 3px solid var(--accent); 
-            box-shadow: 0 0 20px rgba(255, 0, 51, 0.6); /* Photo ke peeche red glow */
+            box-shadow: 0 0 20px rgba(255, 0, 51, 0.6); 
         }
-        .header-area p { color: #fff; font-weight: bold; letter-spacing: 2px; font-size: 1.1em; text-shadow: 0 0 10px rgba(0,0,0,0.8); }
-
+        .header-area p { color: #fff; font-weight: bold; letter-spacing: 2px; text-transform: uppercase; text-shadow: 0 0 10px #000; }
+        
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
         .full-width { grid-column: span 2; }
         label { display: block; margin-bottom: 5px; color: #ccc; font-size: 0.85em; font-weight: bold; }
-        
-        textarea, input { 
-            width: 100%; 
-            padding: 12px; 
-            background: rgba(0, 0, 0, 0.7); 
-            border: 1px solid var(--border); 
-            border-radius: 6px; 
-            color: #fff; 
-            font-size: 14px; 
-            transition: 0.3s;
-        }
-        textarea:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 10px rgba(255, 0, 51, 0.3); }
-        
+        textarea, input { width: 100%; padding: 12px; background: rgba(0,0,0,0.8); border: 1px solid var(--border); border-radius: 6px; color: #fff; font-size: 14px; }
+        textarea:focus, input:focus { outline: none; border-color: var(--accent); }
         .btn-group { display: flex; gap: 10px; margin-top: 20px; }
-        button { flex: 1; padding: 15px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; text-transform: uppercase; transition: 0.2s; }
+        button { flex: 1; padding: 15px; border: none; border-radius: 6px; font-weight: bold; font-size: 16px; cursor: pointer; text-transform: uppercase; }
         #startBtn { background: var(--green); color: #000; }
-        #startBtn:hover:not(:disabled) { background: #00ff80; box-shadow: 0 0 15px var(--green); }
         #stopBtn { background: var(--red); color: #fff; }
-        #stopBtn:hover:not(:disabled) { background: #ff5555; box-shadow: 0 0 15px var(--red); }
-        button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; }
-        
-        .terminal { margin-top: 25px; background: rgba(0, 0, 0, 0.85); border: 1px solid #333; border-radius: 8px; padding: 15px; height: 250px; overflow-y: auto; font-size: 13px; }
+        button:disabled { opacity: 0.3; cursor: not-allowed; }
+        .terminal { margin-top: 25px; background: rgba(0,0,0,0.9); border: 1px solid #333; border-radius: 8px; padding: 15px; height: 250px; overflow-y: auto; font-size: 13px; }
         .log-success { color: var(--green); }
         .log-error { color: var(--red); }
-        
-        .status-bar { display: flex; justify-content: space-between; margin-top: 20px; padding: 15px; background: rgba(0, 0, 0, 0.7); border-radius: 8px; border: 1px solid #333; }
-        .status-bar span { font-weight: bold; }
+        .status-bar { display: flex; justify-content: space-between; margin-top: 20px; padding: 15px; background: rgba(0,0,0,0.7); border-radius: 8px; border: 1px solid var(--border); }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- ✅ HEADER PHOTO -->
         <div class="header-area">
+            <!-- Header Photo with Error Fallback -->
             <img src="https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png" alt="Icon" onerror="this.src='https://via.placeholder.com/120/ff0033/ffffff?text=Insta'">
             <p>Insta Bulk Sender</p>
         </div>
@@ -107,7 +89,7 @@
                 </div>
 
                 <div class="full-width">
-                    <label>🏷️ Prefix Name (Message ke aage lagega)</label>
+                    <label>🏷️ Here Name (Upar dikhega)</label>
                     <input type="text" id="sender_name" name="sender_name" placeholder="I am here" required>
                 </div>
 
@@ -124,7 +106,7 @@
         </form>
 
         <div class="status-bar">
-            <div>Status: <span id="statusText" style="color:var(--accent)">IDLE</span></div>
+            <div>Status: <span id="statusText">IDLE</span></div>
             <div>Sent: <span id="sentCount" style="color:var(--green)">0</span> | Failed: <span id="failCount" style="color:var(--red)">0</span></div>
         </div>
 
@@ -140,135 +122,77 @@
         const statusText = document.getElementById('statusText');
         const sentCountEl = document.getElementById('sentCount');
         const failCountEl = document.getElementById('failCount');
+        const form = document.getElementById('senderForm');
+        let pollingInterval = null;
 
-        let isRunning = false;
-        let sentCount = 0;
-        let failCount = 0;
-
+        // ✅ FIXED PRINTLOG FUNCTION
         function printLog(msg, type = 'normal') {
             const div = document.createElement('div');
-            if (type === 'success' || msg.includes('✅')) div.className = 'log-success';
-            if (type === 'error' || msg.includes('❌') || msg.includes('🛑')) div.className = 'log-error';
+            if (type === 'error' || msg.includes('❌') || msg.includes('🛑')) {
+                div.className = 'log-error';
+            } else if (type === 'success' || msg.includes('✅') || msg.includes('🎉') || msg.includes('🚀')) {
+                div.className = 'log-success';
+            }
             div.innerText = msg;
             terminal.appendChild(div);
             terminal.scrollTop = terminal.scrollHeight;
         }
 
-        function extractCsrfToken(cookieString) {
-            const match = cookieString.match(/csrftoken=([^;]+)/);
-            return match ? match[1] : null;
-        }
+        async function checkStatus() {
+            try {
+                const res = await fetch('/api/status');
+                if (!res.ok) return;
+                const data = await res.json();
+                
+                statusText.innerText = data.isRunning ? 'RUNNING' : 'IDLE';
+                statusText.style.color = data.isRunning ? 'var(--green)' : 'var(--accent)';
+                sentCountEl.innerText = data.totalSent || 0;
+                failCountEl.innerText = data.totalFailed || 0;
 
-        function sleep(ms) {
-            return new Promise(resolve => setTimeout(resolve, ms));
-        }
-
-        async function sendInstagramMessage(threadId, text, cookieStr, csrfToken) {
-            // Instagram Direct Text Broadcast Endpoint
-            const url = `https://www.instagram.com/api/v1/direct_v2/threads/broadcast/text/`;
-            
-            const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-                return v.toString(16);
-            });
-
-            const formData = new URLSearchParams();
-            formData.append('thread_ids', `[${threadId}]`);
-            formData.append('text', text);
-            formData.append('client_context', uuid);
-
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'X-CSRFToken': csrfToken,
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                body: formData.toString()
-            });
-
-            return response.ok;
+                if (data.logs && data.logs.length > 0) {
+                    terminal.innerHTML = ''; 
+                    data.logs.forEach(log => printLog(log));
+                }
+                startBtn.disabled = data.isRunning;
+                stopBtn.disabled = !data.isRunning;
+            } catch (err) {
+                console.error("Status check failed", err);
+            }
         }
 
         startBtn.addEventListener('click', async () => {
-            const cookies = document.getElementById('cookies').value.trim();
-            const threadId = document.getElementById('thread_id').value.trim();
-            const timeDelay = parseInt(document.getElementById('time_delay').value) * 1000;
-            const senderName = document.getElementById('sender_name').value.trim();
-            const fileInput = document.getElementById('message_file');
-
-            if (!cookies || !threadId || !fileInput.files.length) {
-                alert("Please fill all required fields!");
-                return;
-            }
-
-            const csrfToken = extractCsrfToken(cookies);
-            if (!csrfToken) {
-                printLog("> ❌ Error: CSRF token not found in cookies! Make sure 'csrftoken=...' exists.", 'error');
-                return;
-            }
-
-            const file = fileInput.files[0];
-            const fileText = await file.text();
-            const messages = fileText.split('\n').filter(line => line.trim() !== '');
-
-            if (messages.length === 0) {
-                printLog("> ❌ File is empty!", 'error');
-                return;
-            }
-
-            isRunning = true;
+            if (!form.checkValidity()) { form.reportValidity(); return; }
+            const formData = new FormData(form);
+            terminal.innerHTML = '';
             startBtn.disabled = true;
-            stopBtn.disabled = false;
-            statusText.innerText = 'RUNNING';
-            statusText.style.color = 'var(--green)';
-            printLog(`> 🚀 Starting process... Total messages: ${messages.length}`);
+            printLog("> Starting server...", 'normal');
 
-            for (let i = 0; i < messages.length; i++) {
-                if (!isRunning) {
-                    printLog("> 🛑 Process stopped by user.", 'error');
-                    break;
+            try {
+                const res = await fetch('/api/start', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.status === 'error') {
+                    alert(data.message);
+                    startBtn.disabled = false;
+                    return;
                 }
-
-                const fullMsg = `${senderName} : ${messages[i].trim()}`;
-                printLog(`> Sending [${i+1}/${messages.length}]: "${fullMsg}"`);
-
-                try {
-                    const success = await sendInstagramMessage(threadId, fullMsg, cookies, csrfToken);
-                    if (success) {
-                        sentCount++;
-                        sentCountEl.innerText = sentCount;
-                        printLog(`> ✅ Sent successfully!`, 'success');
-                    } else {
-                        failCount++;
-                        failCountEl.innerText = failCount;
-                        printLog(`> ❌ Failed to send. (Check ID or Cookies)`, 'error');
-                    }
-                } catch (err) {
-                    failCount++;
-                    failCountEl.innerText = failCount;
-                    printLog(`> ❌ Network/CORS Error: Instagram API access blocked by browser.`, 'error');
-                }
-
-                if (i < messages.length - 1 && isRunning) {
-                    printLog(`> ⏱️ Waiting ${timeDelay/1000} seconds...`);
-                    await sleep(timeDelay);
-                }
+                if (!pollingInterval) pollingInterval = setInterval(checkStatus, 2000);
+                checkStatus();
+            } catch (err) {
+                printLog("> ❌ Network Error connecting to server.", 'error');
+                startBtn.disabled = false;
             }
-
-            isRunning = false;
-            startBtn.disabled = false;
-            stopBtn.disabled = true;
-            statusText.innerText = 'IDLE';
-            statusText.style.color = 'var(--accent)';
-            printLog("> 🎉 Task completed.");
         });
 
-        stopBtn.addEventListener('click', () => {
-            isRunning = false;
+        stopBtn.addEventListener('click', async () => {
             stopBtn.disabled = true;
-            printLog("> Stopping execution...");
+            printLog("> Stopping execution...", 'error');
+            try { await fetch('/api/stop', { method: 'POST' }); } catch (e) {}
         });
+
+        window.onload = () => {
+            checkStatus();
+            pollingInterval = setInterval(checkStatus, 3000);
+        };
     </script>
 </body>
 </html>
