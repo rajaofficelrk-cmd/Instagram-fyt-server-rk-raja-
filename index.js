@@ -57,11 +57,25 @@ async function sendInstaMessage(cookiesStr, threadId, text) {
     });
 
     try {
-        const response = await axios.post(url, payload.toString(), { headers, timeout: 15000 });
+        // ✅ FIX: maxRedirects: 0 aur validateStatus lagaya hai taaki redirect loop crash na kare
+        const response = await axios.post(url, payload.toString(), { 
+            headers, 
+            timeout: 15000,
+            maxRedirects: 0, 
+            validateStatus: function (status) {
+                return status >= 200 && status < 400; // 200 se 399 tak accept karega
+            }
+        });
+
+        // Agar Instagram redirect kar raha hai (Matlab login page pe bhej raha hai)
+        if (response.status >= 300 && response.status < 400) {
+            return { success: false, error: "Blocked! Instagram redirected to Login. (IP Block or Bad Cookies)" };
+        }
+
         if (response.status === 200 && response.data && response.data.status === "ok") {
             return { success: true };
         } else {
-            return { success: false, error: `API Error: ${response.data.message || 'Unknown'}` };
+            return { success: false, error: `API Error: ${response.data?.message || 'Unknown'}` };
         }
     } catch (err) {
         const errorMsg = err.response?.data?.message || err.message;
@@ -95,6 +109,12 @@ async function runWorker(cookies, threadId, timeDelay, senderName, messages) {
         } else {
             serverState.totalFailed++;
             addLog(`> ❌ Failed: ${result.error}`);
+            
+            // Agar redirect/block error aaya toh thoda ruk kar agla message try karega
+            if (result.error.includes("Blocked")) {
+                addLog("> ⚠️ Stopping process due to Block/Redirect.");
+                break; 
+            }
         }
 
         if (i < messages.length - 1 && !stopFlag) {
