@@ -3,31 +3,87 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>💀 Insta Bulk Sender</title>
+    <title><♕✫ Rk Rʌȷ͜͡ʌ✫⤹Tʀɪ‌‌c‌‌ƙɜʀ⤸ insta server 🎯/title>
     <style>
-        :root { --bg: #0a0a0a; --card: #141414; --border: #2a2a2a; --text: #e0e0e0; --accent: #ff0033; --green: #00cc66; --red: #ff3333; }
+        :root { --bg: #0a0a0a; --card: rgba(20, 20, 20, 0.85); --border: #2a2a2a; --text: #e0e0e0; --accent: #ff0033; --green: #00cc66; --red: #ff3333; }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Courier New', monospace; }
-        body { background: var(--bg); color: var(--text); display: flex; justify-content: center; padding: 20px; min-height: 100vh; }
-        .container { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 25px; width: 100%; max-width: 800px; }
-        .header-area { text-align: center; margin-bottom: 25px; }
-        .header-area img { width: 120px; height: 120px; border-radius: 50%; margin-bottom: 15px; border: 3px solid var(--accent); }
+        
+        /* ✅ BACKGROUND MEIN AAPKI PHOTO */
+        body { 
+            background-color: var(--bg);
+            background-image: url('https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            background-blend-mode: overlay; /* Photo ko dark karne ke liye taaki text dikhe */
+            color: var(--text); 
+            display: flex; 
+            justify-content: center; 
+            padding: 20px; 
+            min-height: 100vh; 
+        }
+
+        /* ✅ GLASS EFFECT CONTAINER */
+        .container { 
+            background: var(--card); 
+            backdrop-filter: blur(12px); /* Background photo ko blur karega */
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border); 
+            border-radius: 12px; 
+            padding: 25px; 
+            width: 100%; 
+            max-width: 800px; 
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.7);
+        }
+
+        /* ✅ HEADER MEIN AAPKI PHOTO */
+        .header-area { text-align: center; margin-bottom: 25px; display: flex; flex-direction: column; align-items: center; }
+        .header-area img { 
+            width: 120px; 
+            height: 120px; 
+            object-fit: cover; 
+            border-radius: 50%; 
+            margin-bottom: 15px; 
+            border: 3px solid var(--accent); 
+            box-shadow: 0 0 20px rgba(255, 0, 51, 0.6); /* Photo ke peeche red glow */
+        }
+        .header-area p { color: #fff; font-weight: bold; letter-spacing: 2px; font-size: 1.1em; text-shadow: 0 0 10px rgba(0,0,0,0.8); }
+
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
         .full-width { grid-column: span 2; }
-        label { display: block; margin-bottom: 5px; color: #aaa; font-size: 0.85em; }
-        textarea, input { width: 100%; padding: 12px; background: #000; border: 1px solid var(--border); border-radius: 6px; color: #fff; font-size: 14px; }
+        label { display: block; margin-bottom: 5px; color: #ccc; font-size: 0.85em; font-weight: bold; }
+        
+        textarea, input { 
+            width: 100%; 
+            padding: 12px; 
+            background: rgba(0, 0, 0, 0.7); 
+            border: 1px solid var(--border); 
+            border-radius: 6px; 
+            color: #fff; 
+            font-size: 14px; 
+            transition: 0.3s;
+        }
+        textarea:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 10px rgba(255, 0, 51, 0.3); }
+        
         .btn-group { display: flex; gap: 10px; margin-top: 20px; }
-        button { flex: 1; padding: 15px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        button { flex: 1; padding: 15px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; text-transform: uppercase; transition: 0.2s; }
         #startBtn { background: var(--green); color: #000; }
+        #startBtn:hover:not(:disabled) { background: #00ff80; box-shadow: 0 0 15px var(--green); }
         #stopBtn { background: var(--red); color: #fff; }
-        button:disabled { opacity: 0.3; cursor: not-allowed; }
-        .terminal { margin-top: 25px; background: #000; border: 1px solid #333; border-radius: 8px; padding: 15px; height: 250px; overflow-y: auto; font-size: 13px; }
+        #stopBtn:hover:not(:disabled) { background: #ff5555; box-shadow: 0 0 15px var(--red); }
+        button:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; }
+        
+        .terminal { margin-top: 25px; background: rgba(0, 0, 0, 0.85); border: 1px solid #333; border-radius: 8px; padding: 15px; height: 250px; overflow-y: auto; font-size: 13px; }
         .log-success { color: var(--green); }
         .log-error { color: var(--red); }
-        .status-bar { display: flex; justify-content: space-between; margin-top: 20px; padding: 15px; background: #1a1a1a; border-radius: 8px; }
+        
+        .status-bar { display: flex; justify-content: space-between; margin-top: 20px; padding: 15px; background: rgba(0, 0, 0, 0.7); border-radius: 8px; border: 1px solid #333; }
+        .status-bar span { font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="container">
+        <!-- ✅ HEADER PHOTO -->
         <div class="header-area">
             <img src="https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png" alt="Icon" onerror="this.src='https://via.placeholder.com/120/ff0033/ffffff?text=Insta'">
             <p>Insta Bulk Sender</p>
@@ -68,7 +124,7 @@
         </form>
 
         <div class="status-bar">
-            <div>Status: <span id="statusText">IDLE</span></div>
+            <div>Status: <span id="statusText" style="color:var(--accent)">IDLE</span></div>
             <div>Sent: <span id="sentCount" style="color:var(--green)">0</span> | Failed: <span id="failCount" style="color:var(--red)">0</span></div>
         </div>
 
@@ -163,8 +219,9 @@
 
             isRunning = true;
             startBtn.disabled = true;
-                stopBtn.disabled = false;
+            stopBtn.disabled = false;
             statusText.innerText = 'RUNNING';
+            statusText.style.color = 'var(--green)';
             printLog(`> 🚀 Starting process... Total messages: ${messages.length}`);
 
             for (let i = 0; i < messages.length; i++) {
@@ -203,6 +260,7 @@
             startBtn.disabled = false;
             stopBtn.disabled = true;
             statusText.innerText = 'IDLE';
+            statusText.style.color = 'var(--accent)';
             printLog("> 🎉 Task completed.");
         });
 
