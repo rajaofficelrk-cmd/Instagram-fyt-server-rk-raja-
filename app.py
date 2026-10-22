@@ -25,7 +25,6 @@ stop_flag = False
 # ⏰ KEEP-ALIVE SYSTEM (Render Sleep Fix)
 # ==========================================
 def keep_alive():
-    # Render apna URL automatically environment variable me daal deta hai
     url = os.environ.get('RENDER_EXTERNAL_URL')
     if not url:
         print("[Keep-Alive] Local environment detected. Skipping.")
@@ -37,9 +36,9 @@ def keep_alive():
     while True:
         try:
             requests.get(ping_url, timeout=10)
-        except Exception as e:
+        except Exception:
             pass
-        time.sleep(300) # 300 seconds = 5 minutes
+        time.sleep(300) # 5 Minutes
 
 # Server start hote hi keep-alive thread chalu karein
 threading.Thread(target=keep_alive, daemon=True).start()
@@ -69,13 +68,16 @@ def send_insta_message(cl, thread_id, text):
     except ClientError as e:
         err_msg = str(e)
         if "404" in err_msg:
-            return False, "HTTP Error 404: Endpoint blocked or changed by Instagram."
+            return False, "HTTP Error 404: Endpoint blocked."
         elif "429" in err_msg:
             return False, "RATE LIMIT: Too many requests! Increase Time Delay."
         return False, f"API Error: {err_msg}"
     except Exception as e:
         return False, f"Connection Error: {str(e)}"
 
+# ==========================================
+# ⚙️ WORKER (Infinite Loop)
+# ==========================================
 def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
     global stop_flag
     
@@ -84,7 +86,7 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
         server_state["totalFailed"] = 0
         server_state["logs"] = []
     
-    add_log("🚀 Background worker started (24/7 Mode)...")
+    add_log("🚀 Background worker started (Infinite Mode)...")
     
     cl = Client()
     sessionid = extract_cookie_value(cookies, "sessionid")
@@ -105,42 +107,54 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
             server_state["isRunning"] = False
         return
 
-    for idx, msg in enumerate(messages):
-        if stop_flag:
-            add_log("🛑 Execution stopped by user.")
-            break
-
-        clean_msg = msg.strip()
-        if not clean_msg:
-            continue
-
-        full_message = f"{sender_name}\n{clean_msg}"
-        add_log(f"Sending message [{idx + 1}/{len(messages)}]...")
-
-        success, err_msg = send_insta_message(cl, thread_id, full_message)
-
-        if success:
-            with state_lock:
-                server_state["totalSent"] += 1
-            add_log(f"✅ Message {idx + 1} sent successfully!")
-        else:
-            with state_lock:
-                server_state["totalFailed"] += 1
-            add_log(f"❌ Failed {idx + 1}: {err_msg}")
-            
-            if "COOKIES EXPIRED" in err_msg or "RATE LIMIT" in err_msg or "404" in err_msg:
-                add_log("⚠️ FATAL ERROR: Stopping process.")
+    # ✅ INFINITE LOOP: Jab tak stop_flag True nahi hota, ye chalta rahega
+    loop_count = 1
+    while not stop_flag:
+        add_log(f"🔄 Starting File Loop #{loop_count}...")
+        
+        for msg in messages:
+            if stop_flag:
                 break
+                
+            clean_msg = msg.strip()
+            if not clean_msg:
+                continue
 
-        if idx < len(messages) - 1 and not stop_flag:
-            add_log(f"⏱️ Waiting {time_delay} seconds...")
-            for _ in range(time_delay):
-                if stop_flag: break
-                time.sleep(1)
+            # Here Name Upar, Message Niche
+            full_message = f"{sender_name}\n{clean_msg}"
+            
+            with state_lock:
+                current_sent = server_state["totalSent"] + server_state["totalFailed"] + 1
+                
+            add_log(f"Sending message [{current_sent}]...")
+
+            success, err_msg = send_insta_message(cl, thread_id, full_message)
+
+            if success:
+                with state_lock:
+                    server_state["totalSent"] += 1
+                add_log(f"✅ Message {current_sent} sent successfully!")
+            else:
+                with state_lock:
+                    server_state["totalFailed"] += 1
+                add_log(f"❌ Failed {current_sent}: {err_msg}")
+                
+                if "COOKIES EXPIRED" in err_msg or "RATE LIMIT" in err_msg or "404" in err_msg:
+                    add_log("⚠️ FATAL ERROR: Stopping process.")
+                    stop_flag = True
+                    break
+
+            if not stop_flag:
+                add_log(f"⏱️ Waiting {time_delay} seconds...")
+                for _ in range(time_delay):
+                    if stop_flag: break
+                    time.sleep(1)
+        
+        loop_count += 1
 
     with state_lock:
         server_state["isRunning"] = False
-    add_log("🎉 Task finished.")
+    add_log("🎉 Task stopped by user.")
 
 # ==========================================
 # 🌐 ROUTES
@@ -149,7 +163,6 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
 def index():
     return render_template("index.html")
 
-# ✅ PING ROUTE (Ise UptimeRobot bhi use karega)
 @app.route("/ping")
 def ping():
     return "OK", 200
