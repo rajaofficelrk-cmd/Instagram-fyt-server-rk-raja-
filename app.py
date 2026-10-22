@@ -10,6 +10,7 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
+# Global state tracker
 server_state = {
     "isRunning": False,
     "totalSent": 0,
@@ -41,7 +42,7 @@ def send_insta_message(cookies_str, thread_id, text):
     url = "https://www.instagram.com/api/v1/direct_v2/threads/broadcast/text/"
     
     headers = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 299.0.0.28.110",
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
         "Cookie": cookies_str,
         "X-CSRFToken": csrf_token,
         "X-IG-App-ID": "936619743392459",
@@ -67,7 +68,7 @@ def send_insta_message(cookies_str, thread_id, text):
         response = requests.post(url, headers=headers, data=payload, timeout=20, allow_redirects=False)
         
         if response.status_code in [301, 302, 303, 307, 308]:
-            return False, "Blocked! Instagram redirected (Render IP restricted)."
+            return False, "Blocked! Instagram redirected (IP/Account restricted)."
             
         try:
             json_data = response.json()
@@ -91,14 +92,18 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
         server_state["totalFailed"] = 0
         server_state["logs"] = []
     
-    add_log("🚀 Server task started on Render...")
+    add_log("🚀 Background worker started...")
     
     for idx, msg in enumerate(messages):
         if stop_flag:
             add_log("🛑 Execution stopped by user.")
             break
 
-        full_message = f"{sender_name}\n{msg.strip()}"
+        clean_msg = msg.strip()
+        if not clean_msg:
+            continue
+
+        full_message = f"{sender_name}\n{clean_msg}"
         add_log(f"Sending message [{idx + 1}/{len(messages)}]...")
 
         success, err_msg = send_insta_message(cookies, thread_id, full_message)
@@ -106,10 +111,10 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
         with state_lock:
             if success:
                 server_state["totalSent"] += 1
-                add_log("✅ Sent successfully!")
+                add_log(f"✅ Message {idx + 1} sent successfully!")
             else:
                 server_state["totalFailed"] += 1
-                add_log(f"❌ Failed: {err_msg}")
+                add_log(f"❌ Failed {idx + 1}: {err_msg}")
         
         if "Blocked" in err_msg or "login_required" in err_msg:
             add_log("⚠️ Stopping process due to Instagram security block.")
@@ -145,16 +150,28 @@ def start_process():
         file = request.files.get("message_file")
 
         if not cookies or not thread_id or not file or not sender_name:
-            raise ValueError("All fields are required!")
+            return jsonify({"status": "error", "message": "All fields are required!"})
 
-        if time_delay < 10:
-            raise ValueError("Time delay must be at least 10 seconds for Render!")
+        if time_delay < 5:
+            time_delay = 5
 
-        lines = file.read().decode("utf-8", errors="ignore").splitlines()
-        messages = [line for line in lines if line.strip()]
+        # 🧩 UNIVERSAL FILE DECODER (Chahe jo file ho, sab chalegi)
+        file_bytes = file.read()
+        file_content = ""
+        for encoding in ['utf-8', 'latin-1', 'cp1252', 'utf-16']:
+            try:
+                file_content = file_bytes.decode(encoding)
+                break
+            except UnicodeDecodeError:
+                continue
+        
+        if not file_content:
+            file_content = file_bytes.decode('utf-8', errors='ignore')
+
+        messages = [line.strip() for line in file_content.splitlines() if line.strip()]
 
         if not messages:
-            raise ValueError("Message file is empty!")
+            return jsonify({"status": "error", "message": "Uploaded text file is empty!"})
 
         with state_lock:
             server_state["isRunning"] = True
@@ -182,7 +199,6 @@ def stop_process():
         server_state["isRunning"] = False
     return jsonify({"status": "success", "message": "Stopping..."})
 
-@app.route("/api/status", methodologies=["GET"]) # wait, let's keep methods=["GET"]
 @app.route("/api/status", methods=["GET"])
 def get_status():
     with state_lock:
