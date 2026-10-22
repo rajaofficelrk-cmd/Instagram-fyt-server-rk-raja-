@@ -36,21 +36,24 @@ async function runWorker(cookiesStr, threadId, timeDelay, senderName, messages) 
     serverState.logs = [];
     stopFlag = false;
 
-    addLog("> 🚀 Starting Browser Automation...");
+    addLog("> 🚀 Starting Browser Automation on Render...");
 
     let browser;
     try {
         browser = await puppeteer.launch({
-            headless: true, // Background mein chalane ke liye true rakhein
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--disable-gpu'
+            ]
         });
 
         const page = await browser.newPage();
-        
-        // Set viewport and user agent
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
 
-        // Parse cookies string and set them in browser
         const cookieItems = cookiesStr.split(';').map(item => {
             const parts = item.trim().split('=');
             if (parts.length >= 2) {
@@ -68,19 +71,17 @@ async function runWorker(cookiesStr, threadId, timeDelay, senderName, messages) 
         addLog("> 🌐 Opening Instagram Direct Chat...");
         await page.goto(`https://www.instagram.com/direct/t/${threadId}/`, { waitUntil: 'networkidle2', timeout: 60000 });
 
-        // Check if redirected to login
         if (page.url().includes('accounts/login')) {
-            addLog("> ❌ Failed: Cookies are invalid or expired (Redirected to login).");
+            addLog("> ❌ Failed: Cookies are invalid or expired.");
             serverState.isRunning = false;
             await browser.close();
             return;
         }
 
-        // Wait for chat input box to appear
         try {
             await page.waitForSelector('div[contenteditable="true"][role="textbox"]', { timeout: 15000 });
         } catch (e) {
-            addLog("> ❌ Failed: Could not find chat input box. Check Thread ID.");
+            addLog("> ❌ Failed: Could not find chat input box.");
             serverState.isRunning = false;
             await browser.close();
             return;
@@ -98,11 +99,8 @@ async function runWorker(cookiesStr, threadId, timeDelay, senderName, messages) 
             addLog(`> Sending message [${i + 1}/${messages.length}]...`);
 
             try {
-                // Click and type message in the textbox
                 const textBox = await page.$('div[contenteditable="true"][role="textbox"]');
                 await textBox.click();
-                
-                // Type message line by line (handling newlines properly in puppeteer)
                 await page.keyboard.type(fullMessage);
                 await page.keyboard.press('Enter');
 
@@ -156,7 +154,6 @@ app.post('/api/start', upload.single('message_file'), async (req, res) => {
             return res.json({ status: "error", message: "Message file is empty!" });
         }
 
-        // Run worker asynchronously
         runWorker(cookies, thread_id, timeDelay, sender_name, messages);
 
         res.json({ status: "success", message: "Started successfully" });
@@ -180,5 +177,5 @@ app.get('/api/status', (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+    console.log(`Server is running on port ${PORT}`);
 });
