@@ -1,23 +1,18 @@
 const express = require('express');
 const multer = require('multer');
-const axios = require('axios');
-const { v4: uuidv4 } = require('uuid');
+const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
 
 const app = express();
 const upload = multer({ dest: 'uploads/' });
 
-// Ensure uploads folder exists
-if (!fs.existsSync('uploads')) {
-    fs.mkdirSync('uploads');
-}
+if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Server State Tracker
 let serverState = {
     isRunning: false,
     totalSent: 0,
@@ -34,104 +29,103 @@ function addLog(msg) {
     console.log(logMsg);
 }
 
-function extractCsrf(cookiesStr) {
-    const match = cookiesStr.match(/csrftoken=([^;]+)/);
-    return match ? match[1].trim() : null;
-}
-
-async function sendInstaMessage(cookiesStr, threadId, text) {
-    const csrfToken = extractCsrf(cookiesStr);
-    if (!csrfToken) {
-        return { success: false, error: "CSRF token not found in cookies" };
-    }
-
-    const url = "https://www.instagram.com/api/v1/direct_v2/threads/broadcast/text/";
-    const headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Cookie": cookiesStr,
-        "X-CSRFToken": csrfToken,
-        "X-IG-App-ID": "936619743392459",
-        "X-ASBD-ID": "198387",
-        "X-IG-Www-Claim": "0",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "X-Requested-With": "XMLHttpRequest",
-        "Origin": "https://www.instagram.com",
-        "Referer": `https://www.instagram.com/direct/t/${threadId}/`,
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.9"
-    };
-
-    const payload = new URLSearchParams({
-        thread_ids: `[${threadId}]`,
-        text: text,
-        client_context: uuidv4()
-    });
-
-    try {
-        const response = await axios.post(url, payload.toString(), { 
-            headers, 
-            timeout: 15000,
-            maxRedirects: 0, 
-            validateStatus: function (status) {
-                return status >= 200 && status < 400;
-            }
-        });
-
-        if (response.status >= 300 && response.status < 400) {
-            return { success: false, error: "Blocked! Instagram redirected to Login. (IP Block or Bad Cookies)" };
-        }
-
-        if (response.status === 200 && response.data && response.data.status === "ok") {
-            return { success: true };
-        } else {
-            return { success: false, error: `API Error: ${response.data?.message || 'Unknown'}` };
-        }
-    } catch (err) {
-        const errorMsg = err.response?.data?.message || err.message;
-        return { success: false, error: errorMsg };
-    }
-}
-
-async function runWorker(cookies, threadId, timeDelay, senderName, messages) {
+async function runWorker(cookiesStr, threadId, timeDelay, senderName, messages) {
     serverState.isRunning = true;
     serverState.totalSent = 0;
     serverState.totalFailed = 0;
     serverState.logs = [];
     stopFlag = false;
 
-    addLog("> 🚀 Server task started...");
+    addLog("> 🚀 Starting Browser Automation...");
 
-    for (let i = 0; i < messages.length; i++) {
-        if (stopFlag) {
-            addLog("> 🛑 Execution stopped by user.");
-            break;
+    let browser;
+    try {
+        browser = await puppeteer.launch({
+            headless: true, // Background mein chalane ke liye true rakhein
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
+
+        const page = await browser.newPage();
+        
+        // Set viewport and user agent
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
+
+        // Parse cookies string and set them in browser
+        const cookieItems = cookiesStr.split(';').map(item => {
+            const parts = item.trim().split('=');
+            if (parts.length >= 2) {
+                return {
+                    name: parts[0].trim(),
+                    value: parts.slice(1).join('=').trim(),
+                    domain: '.instagram.com'
+                };
+            }
+            return null;
+        }).filter(Boolean);
+
+        await page.setCookie(...cookieItems);
+
+        addLog("> 🌐 Opening Instagram Direct Chat...");
+        await page.goto(`https://www.instagram.com/direct/t/${threadId}/`, { waitUntil: 'networkidle2', timeout: 60000 });
+
+        // Check if redirected to login
+        if (page.url().includes('accounts/login')) {
+            addLog("> ❌ Failed: Cookies are invalid or expired (Redirected to login).");
+            serverState.isRunning = false;
+            await browser.close();
+            return;
         }
 
-        const fullMessage = `${senderName}\n${messages[i].trim()}`;
-        addLog(`> Sending message [${i + 1}/${messages.length}]...`);
+        // Wait for chat input box to appear
+        try {
+            await page.waitForSelector('div[contenteditable="true"][role="textbox"]', { timeout: 15000 });
+        } catch (e) {
+            addLog("> ❌ Failed: Could not find chat input box. Check Thread ID.");
+            serverState.isRunning = false;
+            await browser.close();
+            return;
+        }
 
-        const result = await sendInstaMessage(cookies, threadId, fullMessage);
+        addLog("> ✅ Login successful! Starting message loop...");
 
-        if (result.success) {
-            serverState.totalSent++;
-            addLog("> ✅ Sent successfully!");
-        } else {
-            serverState.totalFailed++;
-            addLog(`> ❌ Failed: ${result.error}`);
-            
-            if (result.error.includes("Blocked")) {
-                addLog("> ⚠️ Stopping process due to Block/Redirect.");
-                break; 
+        for (let i = 0; i < messages.length; i++) {
+            if (stopFlag) {
+                addLog("> 🛑 Execution stopped by user.");
+                break;
+            }
+
+            const fullMessage = `${senderName}\n${messages[i].trim()}`;
+            addLog(`> Sending message [${i + 1}/${messages.length}]...`);
+
+            try {
+                // Click and type message in the textbox
+                const textBox = await page.$('div[contenteditable="true"][role="textbox"]');
+                await textBox.click();
+                
+                // Type message line by line (handling newlines properly in puppeteer)
+                await page.keyboard.type(fullMessage);
+                await page.keyboard.press('Enter');
+
+                serverState.totalSent++;
+                addLog("> ✅ Sent successfully!");
+            } catch (err) {
+                serverState.totalFailed++;
+                addLog(`> ❌ Failed: ${err.message}`);
+            }
+
+            if (i < messages.length - 1 && !stopFlag) {
+                addLog(`> ⏱️ Waiting ${timeDelay} seconds...`);
+                for (let s = 0; s < timeDelay; s++) {
+                    if (stopFlag) break;
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
             }
         }
 
-        if (i < messages.length - 1 && !stopFlag) {
-            addLog(`> ⏱️ Waiting ${timeDelay} seconds...`);
-            for (let s = 0; s < timeDelay; s++) {
-                if (stopFlag) break;
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-        }
+        await browser.close();
+    } catch (err) {
+        addLog(`> ❌ Browser Error: ${err.message}`);
+        if (browser) await browser.close();
     }
 
     serverState.isRunning = false;
@@ -140,9 +134,7 @@ async function runWorker(cookies, threadId, timeDelay, senderName, messages) {
 
 app.post('/api/start', upload.single('message_file'), async (req, res) => {
     if (serverState.isRunning) {
-        if (req.file && fs.existsSync(req.file.path)) {
-            fs.unlinkSync(req.file.path);
-        }
+        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         return res.json({ status: "error", message: "Server is already running!" });
     }
 
@@ -151,9 +143,7 @@ app.post('/api/start', upload.single('message_file'), async (req, res) => {
     const file = req.file;
 
     if (!cookies || !thread_id || !file || !sender_name) {
-        if (file && fs.existsSync(file.path)) {
-            fs.unlinkSync(file.path);
-        }
+        if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
         return res.json({ status: "error", message: "All fields are required!" });
     }
 
@@ -166,6 +156,7 @@ app.post('/api/start', upload.single('message_file'), async (req, res) => {
             return res.json({ status: "error", message: "Message file is empty!" });
         }
 
+        // Run worker asynchronously
         runWorker(cookies, thread_id, timeDelay, sender_name, messages);
 
         res.json({ status: "success", message: "Started successfully" });
