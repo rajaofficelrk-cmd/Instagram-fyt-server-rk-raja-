@@ -1,205 +1,194 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>💀 Insta Bulk Sender</title>
-    <style>
-        :root { --bg: #0a0a0a; --card: rgba(20, 20, 20, 0.85); --border: #2a2a2a; --text: #e0e0e0; --accent: #ff0033; --green: #00cc66; --red: #ff3333; }
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Courier New', monospace; }
-        
-        body { 
-            background-color: var(--bg);
-            background-image: url('https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png');
-            background-size: cover;
-            background-position: center;
-            background-attachment: fixed;
-            background-blend-mode: overlay;
-            color: var(--text); 
-            display: flex; 
-            justify-content: center; 
-            padding: 20px; 
-            min-height: 100vh; 
-        }
-
-        .container { 
-            background: var(--card); 
-            backdrop-filter: blur(10px); 
-            -webkit-backdrop-filter: blur(10px); 
-            border: 1px solid var(--border); 
-            border-radius: 12px; 
-            padding: 25px; 
-            width: 100%; 
-            max-width: 800px; 
-            box-shadow: 0 0 30px rgba(0,0,0,0.8); 
-        }
-        
-        .header-area { text-align: center; margin-bottom: 25px; display: flex; flex-direction: column; align-items: center;}
-        .header-area img { 
-            width: 120px; 
-            height: 120px; 
-            object-fit: cover; 
-            border-radius: 50%; 
-            margin-bottom: 15px; 
-            border: 3px solid var(--accent); 
-            box-shadow: 0 0 20px rgba(255, 0, 51, 0.6); 
-        }
-        .header-area p { color: #fff; font-weight: bold; letter-spacing: 2px; text-transform: uppercase; text-shadow: 0 0 10px #000; }
-        
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-        .full-width { grid-column: span 2; }
-        label { display: block; margin-bottom: 5px; color: #ccc; font-size: 0.85em; font-weight: bold; }
-        textarea, input { width: 100%; padding: 12px; background: rgba(0,0,0,0.8); border: 1px solid var(--border); border-radius: 6px; color: #fff; font-size: 14px; }
-        textarea:focus, input:focus { outline: none; border-color: var(--accent); }
-        .btn-group { display: flex; gap: 10px; margin-top: 20px; }
-        button { flex: 1; padding: 15px; border: none; border-radius: 6px; font-weight: bold; font-size: 16px; cursor: pointer; text-transform: uppercase; }
-        #startBtn { background: var(--green); color: #000; }
-        #stopBtn { background: var(--red); color: #fff; }
-        button:disabled { opacity: 0.3; cursor: not-allowed; }
-        .terminal { margin-top: 25px; background: rgba(0,0,0,0.9); border: 1px solid #333; border-radius: 8px; padding: 15px; height: 250px; overflow-y: auto; font-size: 13px; }
-        .log-success { color: var(--green); }
-        .log-error { color: var(--red); }
-        .status-bar { display: flex; justify-content: space-between; margin-top: 20px; padding: 15px; background: rgba(0,0,0,0.7); border-radius: 8px; border: 1px solid var(--border); }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RK RAJA | Server Panel</title>
+<style>
+:root {
+  --bg: #0a0a0a;
+  --card: rgba(20,20,20,.92);
+  --border: #303030;
+  --text: #eee;
+  --accent: #ff0033;
+  --green: #00cc66;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 20px;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  background: var(--bg);
+  background-image:
+    linear-gradient(#0009,#000b),
+    url('https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png');
+  background-position: center;
+  background-size: cover;
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: "Courier New", monospace;
+}
+.container {
+  width: 100%;
+  max-width: 800px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  align-self: flex-start;
+}
+header { text-align: center; margin-bottom: 25px; }
+header img {
+  width: 100px;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 3px solid var(--accent);
+}
+h2 { color: var(--accent); }
+label { display: block; margin: 16px 0 7px; }
+input, button {
+  width: 100%;
+  padding: 13px;
+  border-radius: 6px;
+  font: inherit;
+}
+input {
+  color: white;
+  background: #080808;
+  border: 1px solid var(--border);
+}
+button {
+  margin-top: 16px;
+  cursor: pointer;
+  font-weight: bold;
+  border: 0;
+}
+button:disabled { opacity: .5; cursor: not-allowed; }
+#startBtn { background: var(--green); color: #000; }
+.status {
+  margin-top: 20px;
+  padding: 15px;
+  background: #080808;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+#terminal {
+  height: 230px;
+  overflow-y: auto;
+  margin-top: 16px;
+  padding: 12px;
+  background: #000;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.success { color: var(--green); }
+.error { color: #ff4444; }
+</style>
 </head>
 <body>
-    <div class="container">
-        <div class="header-area">
-            <img src="https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png" alt="Icon" onerror="this.src='https://via.placeholder.com/120/ff0033/ffffff?text=Insta'">
-            <p>Insta Bulk Sender</p>
-        </div>
+<main class="container">
+  <header>
+    <img
+      src="https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png"
+      alt="RK RAJA"
+    >
+    <h2>RK RAJA SERVER</h2>
+    <p>TXT FILE VALIDATOR</p>
+  </header>
 
-        <form id="senderForm">
-            <div class="grid">
-                <div class="full-width">
-                    <label>🍪 Instagram Cookies (csrftoken=...; sessionid=...)</label>
-                    <textarea id="cookies" name="cookies" rows="3" placeholder="sessionid=...; ds_user_id=...; csrftoken=...;" required></textarea>
-                </div>
-                
-                <div>
-                    <label>👥 Thread ID (Group ya Chat ID)</label>
-                    <input type="text" id="thread_id" name="thread_id" placeholder="e.g. 3402823668..." required>
-                </div>
+  <form id="form">
+    <label for="message_file">Upload TXT file (max 1 MB)</label>
+    <input
+      id="message_file"
+      name="message_file"
+      type="file"
+      accept=".txt,text/plain"
+      required
+    >
+    <button id="startBtn" type="submit">CHECK FILE</button>
+  </form>
 
-                <div>
-                    <label>⏱️ Time Delay (Seconds)</label>
-                    <input type="number" id="time_delay" name="time_delay" value="10" min="5" required>
-                </div>
+  <section class="status">
+    <div>Server: <strong id="serverStatus">Checking...</strong></div>
+    <div>Lines validated: <strong id="lineCount">0</strong></div>
+  </section>
 
-                <div class="full-width">
-                    <label>🏷️ Here Name (Upar dikhega)</label>
-                    <input type="text" id="sender_name" name="sender_name" placeholder="I am here" required>
-                </div>
+  <section id="terminal" aria-live="polite">
+    <div> &gt; Panel initialized.</div>
+  </section>
+</main>
 
-                <div class="full-width">
-                    <label>📁 Upload Message File (.txt)</label>
-                    <input type="file" id="message_file" name="message_file" accept=".txt" required>
-                </div>
-            </div>
+<script>
+const form = document.getElementById("form");
+const startBtn = document.getElementById("startBtn");
+const terminal = document.getElementById("terminal");
+const serverStatus = document.getElementById("serverStatus");
+const lineCount = document.getElementById("lineCount");
 
-            <div class="btn-group">
-                <button type="button" id="startBtn">▶️ Start Process</button>
-                <button type="button" id="stopBtn" disabled>⏹️ Stop Process</button>
-            </div>
-        </form>
+function log(message, type = "") {
+  const div = document.createElement("div");
+  div.className = type;
+  div.textContent = "> " + message;
+  terminal.appendChild(div);
+  terminal.scrollTop = terminal.scrollHeight;
+}
 
-        <div class="status-bar">
-            <div>Status: <span id="statusText">IDLE</span></div>
-            <div>Sent: <span id="sentCount" style="color:var(--green)">0</span> | Failed: <span id="failCount" style="color:var(--red)">0</span></div>
-        </div>
+async function checkHealth() {
+  try {
+    const response = await fetch("/health", {
+      cache: "no-store"
+    });
+    if (!response.ok) throw new Error("Server unavailable");
+    const data = await response.json();
+    serverStatus.textContent = data.status.toUpperCase();
+    serverStatus.className = "success";
+  } catch {
+    serverStatus.textContent = "OFFLINE";
+    serverStatus.className = "error";
+  }
+}
 
-        <div class="terminal" id="terminal">
-            <div>> System ready.</div>
-        </div>
-    </div>
+form.addEventListener("submit", async event => {
+  event.preventDefault();
 
-    <script>
-        const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const terminal = document.getElementById('terminal');
-        const statusText = document.getElementById('statusText');
-        const sentCountEl = document.getElementById('sentCount');
-        const failCountEl = document.getElementById('failCount');
-        const form = document.getElementById('senderForm');
-        let pollingInterval = null;
+  if (!form.reportValidity()) return;
 
-        function printLog(msg, type = 'normal') {
-            const div = document.createElement('div');
-            if (type === 'error' || msg.includes('❌') || msg.includes('🛑')) {
-                div.className = 'log-error';
-            } else if (type === 'success' || msg.includes('✅') || msg.includes('🎉') || msg.includes('🚀')) {
-                div.className = 'log-success';
-            }
-            div.innerText = msg;
-            terminal.appendChild(div);
-            terminal.scrollTop = terminal.scrollHeight;
-        }
+  startBtn.disabled = true;
+  lineCount.textContent = "0";
 
-        async function checkStatus() {
-            try {
-                const res = await fetch('/api/status');
-                if (!res.ok) return;
-                const data = await res.json();
-                
-                statusText.innerText = data.isRunning ? 'RUNNING' : 'IDLE';
-                statusText.style.color = data.isRunning ? 'var(--green)' : 'var(--accent)';
-                sentCountEl.innerText = data.totalSent || 0;
-                failCountEl.innerText = data.totalFailed || 0;
+  const formData = new FormData(form);
 
-                if (data.logs && data.logs.length > 0) {
-                    terminal.innerHTML = ''; 
-                    data.logs.forEach(log => printLog(log));
-                }
-                startBtn.disabled = data.isRunning;
-                stopBtn.disabled = !data.isRunning;
-            } catch (err) {}
-        }
+  try {
+    const response = await fetch("/api/start", {
+      method: "POST",
+      body: formData
+    });
 
-        startBtn.addEventListener('click', async () => {
-            if (!form.checkValidity()) { 
-                form.reportValidity(); 
-                return; 
-            }
-            
-            const formData = new FormData(form);
-            startBtn.disabled = true;
-            printLog("> Starting server...", 'normal');
+    const data = await response.json();
 
-            try {
-                const res = await fetch('/api/start', { method: 'POST', body: formData });
-                const data = await res.json();
-                
-                if (data.status === 'error') {
-                    alert(data.message);
-                    startBtn.disabled = false;
-                    printLog(`> ❌ Error: ${data.message}`, 'error');
-                    return;
-                }
-                
-                if (!pollingInterval) {
-                    pollingInterval = setInterval(checkStatus, 2000);
-                }
-                checkStatus();
-            } catch (err) {
-                printLog("> ❌ Network Error connecting to server.", 'error');
-                startBtn.disabled = false;
-            }
-        });
+    if (!response.ok || data.status !== "success") {
+      throw new Error(data.message || "Request failed");
+    }
 
-        stopBtn.addEventListener('click', async () => {
-            stopBtn.disabled = true;
-            printLog("> Stopping execution...", 'error');
-            try { 
-                await fetch('/api/stop', { method: 'POST' }); 
-            } catch (e) {}
-        });
+    lineCount.textContent = String(data.messageCount);
+    log(data.message, "success");
+  } catch (error) {
+    log(error.message || "Network error", "error");
+  } finally {
+    startBtn.disabled = false;
+    await checkHealth();
+  }
+});
 
-        window.onload = () => {
-            checkStatus();
-            if (!pollingInterval) {
-                pollingInterval = setInterval(checkStatus, 3000);
-            }
-        };
-    </script>
+checkHealth();
+setInterval(checkHealth, 15000);
+</script>
 </body>
 </html>
