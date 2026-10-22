@@ -4,6 +4,8 @@ import threading
 from flask import Flask, render_template, request, jsonify
 from instagrapi import Client
 from instagrapi.exceptions import LoginRequired, ClientError
+import requests
+import re
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -16,10 +18,35 @@ server_state = {
     "logs": []
 }
 
-# ✅ RLock use kar rahe hain taaki server freeze na ho
 state_lock = threading.RLock()
 stop_flag = False
 
+# ==========================================
+# ⏰ KEEP-ALIVE SYSTEM (Render Sleep Fix)
+# ==========================================
+def keep_alive():
+    # Render apna URL automatically environment variable me daal deta hai
+    url = os.environ.get('RENDER_EXTERNAL_URL')
+    if not url:
+        print("[Keep-Alive] Local environment detected. Skipping.")
+        return
+    
+    ping_url = f"{url}/ping"
+    print(f"[Keep-Alive] Started. Pinging {ping_url} every 5 minutes.")
+    
+    while True:
+        try:
+            requests.get(ping_url, timeout=10)
+        except Exception as e:
+            pass
+        time.sleep(300) # 300 seconds = 5 minutes
+
+# Server start hote hi keep-alive thread chalu karein
+threading.Thread(target=keep_alive, daemon=True).start()
+
+# ==========================================
+# 🛠️ HELPER FUNCTIONS
+# ==========================================
 def add_log(message):
     timestamp = time.strftime("%H:%M:%S")
     log_msg = f"[{timestamp}] > {message}"
@@ -30,14 +57,11 @@ def add_log(message):
     print(log_msg)
 
 def extract_cookie_value(cookies_str, key):
-    import re
     match = re.search(rf'{key}=([^;]+)', cookies_str)
     return match.group(1).strip() if match else None
 
 def send_insta_message(cl, thread_id, text):
     try:
-        # ✅ instagrapi ka direct_send method use karein
-        # Ye library khud se signed_body aur zaroori headers manage karti hai
         cl.direct_send(text=text, thread_ids=[thread_id])
         return True, "Success"
     except LoginRequired:
@@ -60,7 +84,7 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
         server_state["totalFailed"] = 0
         server_state["logs"] = []
     
-    add_log("🚀 Background worker started (using instagrapi)...")
+    add_log("🚀 Background worker started (24/7 Mode)...")
     
     cl = Client()
     sessionid = extract_cookie_value(cookies, "sessionid")
@@ -90,7 +114,6 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
         if not clean_msg:
             continue
 
-        # Here Name Upar, Message Niche
         full_message = f"{sender_name}\n{clean_msg}"
         add_log(f"Sending message [{idx + 1}/{len(messages)}]...")
 
@@ -119,9 +142,17 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
         server_state["isRunning"] = False
     add_log("🎉 Task finished.")
 
+# ==========================================
+# 🌐 ROUTES
+# ==========================================
 @app.route("/")
 def index():
     return render_template("index.html")
+
+# ✅ PING ROUTE (Ise UptimeRobot bhi use karega)
+@app.route("/ping")
+def ping():
+    return "OK", 200
 
 @app.route("/api/start", methods=["POST"])
 def start_process():
