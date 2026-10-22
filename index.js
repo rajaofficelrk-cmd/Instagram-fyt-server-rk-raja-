@@ -1,154 +1,194 @@
 
-const express = require("express");
-const multer = require("multer");
-const fs = require("fs");
-const path = require("path");
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RK RAJA | Server Panel</title>
+<style>
+:root {
+  --bg: #0a0a0a;
+  --card: rgba(20,20,20,.92);
+  --border: #303030;
+  --text: #eee;
+  --accent: #ff0033;
+  --green: #00cc66;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 20px;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  background: var(--bg);
+  background-image:
+    linear-gradient(#0009,#000b),
+    url('https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png');
+  background-position: center;
+  background-size: cover;
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: "Courier New", monospace;
+}
+.container {
+  width: 100%;
+  max-width: 800px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  align-self: flex-start;
+}
+header { text-align: center; margin-bottom: 25px; }
+header img {
+  width: 100px;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 3px solid var(--accent);
+}
+h2 { color: var(--accent); }
+label { display: block; margin: 16px 0 7px; }
+input, button {
+  width: 100%;
+  padding: 13px;
+  border-radius: 6px;
+  font: inherit;
+}
+input {
+  color: white;
+  background: #080808;
+  border: 1px solid var(--border);
+}
+button {
+  margin-top: 16px;
+  cursor: pointer;
+  font-weight: bold;
+  border: 0;
+}
+button:disabled { opacity: .5; cursor: not-allowed; }
+#startBtn { background: var(--green); color: #000; }
+.status {
+  margin-top: 20px;
+  padding: 15px;
+  background: #080808;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+#terminal {
+  height: 230px;
+  overflow-y: auto;
+  margin-top: 16px;
+  padding: 12px;
+  background: #000;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.success { color: var(--green); }
+.error { color: #ff4444; }
+</style>
+</head>
+<body>
+<main class="container">
+  <header>
+    <img
+      src="https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png"
+      alt="RK RAJA"
+    >
+    <h2>RK RAJA SERVER</h2>
+    <p>TXT FILE VALIDATOR</p>
+  </header>
 
-const app = express();
-const PORT = process.env.PORT || 5000;
+  <form id="form">
+    <label for="message_file">Upload TXT file (max 1 MB)</label>
+    <input
+      id="message_file"
+      name="message_file"
+      type="file"
+      accept=".txt,text/plain"
+      required
+    >
+    <button id="startBtn" type="submit">CHECK FILE</button>
+  </form>
 
-const uploadDir = path.join(__dirname, "uploads");
-const publicDir = path.join(__dirname, "public");
+  <section class="status">
+    <div>Server: <strong id="serverStatus">Checking...</strong></div>
+    <div>Lines validated: <strong id="lineCount">0</strong></div>
+  </section>
 
-fs.mkdirSync(uploadDir, { recursive: true });
-fs.mkdirSync(publicDir, { recursive: true });
+  <section id="terminal" aria-live="polite">
+    <div> &gt; Panel initialized.</div>
+  </section>
+</main>
 
-const upload = multer({
-  dest: uploadDir,
-  limits: {
-    fileSize: 1024 * 1024,
-    files: 1
-  },
-  fileFilter: (req, file, cb) => {
-    if (path.extname(file.originalname).toLowerCase() !== ".txt") {
-      return cb(new Error("Only .txt files are allowed"));
-    }
-    cb(null, true);
-  }
-});
+<script>
+const form = document.getElementById("form");
+const startBtn = document.getElementById("startBtn");
+const terminal = document.getElementById("terminal");
+const serverStatus = document.getElementById("serverStatus");
+const lineCount = document.getElementById("lineCount");
 
-app.use(express.urlencoded({ extended: true, limit: "20kb" }));
-app.use(express.json({ limit: "20kb" }));
-app.use(express.static(publicDir));
-
-let state = {
-  isRunning: false,
-  totalSent: 0,
-  totalFailed: 0,
-  logs: []
-};
-
-let stopRequested = false;
-
-function addLog(message) {
-  const entry = `[${new Date().toISOString()}] ${message}`;
-  state.logs.push(entry);
-  if (state.logs.length > 150) state.logs.shift();
-  console.log(entry);
+function log(message, type = "") {
+  const div = document.createElement("div");
+  div.className = type;
+  div.textContent = "> " + message;
+  terminal.appendChild(div);
+  terminal.scrollTop = terminal.scrollHeight;
 }
 
-app.get("/", (req, res) => {
-  res.send("RK RAJA server is online ❤️");
-});
-
-app.get("/api/status", (req, res) => {
-  res.json(state);
-});
-
-app.post("/api/start", upload.single("message_file"), (req, res) => {
-  const file = req.file;
-
-  if (state.isRunning) {
-    if (file) fs.promises.unlink(file.path).catch(() => {});
-    return res.status(409).json({
-      status: "error",
-      message: "A task is already running."
+async function checkHealth() {
+  try {
+    const response = await fetch("/health", {
+      cache: "no-store"
     });
+    if (!response.ok) throw new Error("Server unavailable");
+    const data = await response.json();
+    serverStatus.textContent = data.status.toUpperCase();
+    serverStatus.className = "success";
+  } catch {
+    serverStatus.textContent = "OFFLINE";
+    serverStatus.className = "error";
   }
+}
 
-  const senderName = String(req.body.sender_name || "").trim();
-  const delay = Number(req.body.time_delay ?? 10);
+form.addEventListener("submit", async event => {
+  event.preventDefault();
 
-  if (!senderName || !file) {
-    if (file) fs.promises.unlink(file.path).catch(() => {});
-    return res.status(400).json({
-      status: "error",
-      message: "Sender name and a TXT file are required."
-    });
-  }
+  if (!form.reportValidity()) return;
 
-  if (!Number.isInteger(delay) || delay < 1 || delay > 3600) {
-    fs.promises.unlink(file.path).catch(() => {});
-    return res.status(400).json({
-      status: "error",
-      message: "Delay must be between 1 and 3600 seconds."
-    });
-  }
+  startBtn.disabled = true;
+  lineCount.textContent = "0";
 
-  let messages;
+  const formData = new FormData(form);
 
   try {
-    messages = fs.readFileSync(file.path, "utf8")
-      .split(/\r?\n/)
-      .map(line => line.trim())
-      .filter(Boolean);
+    const response = await fetch("/api/start", {
+      method: "POST",
+      body: formData
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || data.status !== "success") {
+      throw new Error(data.message || "Request failed");
+    }
+
+    lineCount.textContent = String(data.messageCount);
+    log(data.message, "success");
   } catch (error) {
-    fs.promises.unlink(file.path).catch(() => {});
-    return res.status(500).json({
-      status: "error",
-      message: "Could not read the uploaded file."
-    });
+    log(error.message || "Network error", "error");
+  } finally {
+    startBtn.disabled = false;
+    await checkHealth();
   }
-
-  fs.promises.unlink(file.path).catch(() => {});
-
-  if (messages.length === 0) {
-    return res.status(400).json({
-      status: "error",
-      message: "The TXT file is empty."
-    });
-  }
-
-  // Validation and status endpoint test only.
-  // No messages are sent to Instagram.
-  state = {
-    isRunning: false,
-    totalSent: 0,
-    totalFailed: 0,
-    logs: []
-  };
-
-  stopRequested = false;
-  addLog(`Validated ${messages.length} messages for ${senderName}.`);
-
-  return res.json({
-    status: "success",
-    message: "File validated successfully.",
-    messageCount: messages.length
-  });
 });
 
-app.post("/api/stop", (req, res) => {
-  stopRequested = true;
-  res.json({
-    status: "success",
-    message: "Stop flag set."
-  });
-});
-
-app.use((err, req, res, next) => {
-  if (req.file?.path) {
-    fs.promises.unlink(req.file.path).catch(() => {});
-  }
-
-  const status = err instanceof multer.MulterError ? 400 : 400;
-
-  res.status(status).json({
-    status: "error",
-    message: err.message || "Request failed."
-  });
-});
-
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`RK RAJA server listening on port ${PORT}`);
-});
+checkHealth();
+setInterval(checkHealth, 15000);
+</script>
+</body>
+</html>
