@@ -22,25 +22,21 @@ state_lock = threading.RLock()
 stop_flag = False
 
 # ==========================================
-# ⏰ KEEP-ALIVE SYSTEM (Render Sleep Fix)
+# ⏰ 24/7 KEEP-ALIVE SYSTEM (Render Sleep Fix)
 # ==========================================
 def keep_alive():
     url = os.environ.get('RENDER_EXTERNAL_URL')
     if not url:
-        print("[Keep-Alive] Local environment detected. Skipping.")
         return
     
     ping_url = f"{url}/ping"
-    print(f"[Keep-Alive] Started. Pinging {ping_url} every 5 minutes.")
-    
     while True:
         try:
             requests.get(ping_url, timeout=10)
         except Exception:
             pass
-        time.sleep(300) # 5 Minutes
+        time.sleep(300) # Har 5 minute mein ping karega
 
-# Server start hote hi keep-alive thread chalu karein
 threading.Thread(target=keep_alive, daemon=True).start()
 
 # ==========================================
@@ -86,13 +82,13 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
         server_state["totalFailed"] = 0
         server_state["logs"] = []
     
-    add_log("🚀 Background worker started (Infinite Mode)...")
+    add_log("🚀 Background worker started (24/7 Infinite Mode)...")
     
     cl = Client()
     sessionid = extract_cookie_value(cookies, "sessionid")
     
     if not sessionid:
-        add_log("❌ CRITICAL: Session ID nahi mila. Please provide valid cookies.")
+        add_log("❌ CRITICAL: Session ID nahi mila.")
         with state_lock:
             server_state["isRunning"] = False
         return
@@ -107,7 +103,7 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
             server_state["isRunning"] = False
         return
 
-    # ✅ INFINITE LOOP: Jab tak stop_flag True nahi hota, ye chalta rahega
+    # ✅ INFINITE LOOP: Jab tak stop_flag True nahi hota
     loop_count = 1
     while not stop_flag:
         add_log(f"🔄 Starting File Loop #{loop_count}...")
@@ -120,7 +116,6 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
             if not clean_msg:
                 continue
 
-            # Here Name Upar, Message Niche
             full_message = f"{sender_name}\n{clean_msg}"
             
             with state_lock:
