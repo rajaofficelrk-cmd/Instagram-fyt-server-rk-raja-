@@ -1,7 +1,7 @@
 import os
 import time
 import threading
-import concurrent.futures  # ✅ Timeout ke liye zaroori
+import concurrent.futures
 from flask import Flask, render_template, request, jsonify
 from instagrapi import Client
 from instagrapi.exceptions import LoginRequired, ClientError
@@ -23,7 +23,7 @@ state_lock = threading.RLock()
 stop_flag = False
 
 # ==========================================
-# ⏰ KEEP-ALIVE SYSTEM (Render Sleep Fix)
+# ⏰ 24/7 KEEP-ALIVE SYSTEM (Render Sleep Fix)
 # ==========================================
 def keep_alive():
     url = os.environ.get('RENDER_EXTERNAL_URL')
@@ -35,7 +35,7 @@ def keep_alive():
             requests.get(ping_url, timeout=10)
         except Exception:
             pass
-        time.sleep(300)
+        time.sleep(300) # Har 5 minute mein ping karega
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
@@ -55,44 +55,36 @@ def extract_cookie_value(cookies_str, key):
     match = re.search(rf'{key}=([^;]+)', cookies_str)
     return match.group(1).strip() if match else None
 
-# ✅ LOGIN FUNCTION WITH TIMEOUT (Hang fix)
-def login_with_timeout(cl, sessionid, proxy_url=None):
+# ✅ Safe Login with Timeout (Taaki atke nahi)
+def safe_login(cl, sessionid):
     def _login():
-        if proxy_url:
-            cl.set_proxy(proxy_url)
         cl.login_by_sessionid(sessionid)
-
-    # 30 second ka timeout set karein
+    
     with concurrent.futures.ThreadPoolExecutor() as executor:
         future = executor.submit(_login)
         try:
-            future.result(timeout=30) # 30 seconds wait
-            return True, "Login Successful"
+            future.result(timeout=45) # 45 seconds timeout
+            return True, "Success"
         except concurrent.futures.TimeoutError:
-            return False, "LOGIN TIMEOUT: Instagram did not respond in 30s. (IP Block / Proxy Required)"
+            return False, "TIMEOUT: Instagram login took too long. (IP Blocked)"
         except Exception as e:
-            return False, f"Login Failed: {str(e)}"
+            return False, str(e)
 
 def send_insta_message(cl, thread_id, text):
     try:
         cl.direct_send(text=text, thread_ids=[thread_id])
         return True, "Success"
     except LoginRequired:
-        return False, "COOKIES EXPIRED: Please update your sessionid."
+        return False, "COOKIES EXPIRED"
     except ClientError as e:
-        err_msg = str(e)
-        if "404" in err_msg:
-            return False, "HTTP Error 404: Endpoint blocked."
-        elif "429" in err_msg:
-            return False, "RATE LIMIT: Too many requests! Increase Time Delay."
-        return False, f"API Error: {err_msg}"
+        return False, f"API Error: {str(e)}"
     except Exception as e:
         return False, f"Connection Error: {str(e)}"
 
 # ==========================================
-# ⚙️ WORKER (Infinite Loop)
+# ⚙️ WORKER (Infinite Loop Mode)
 # ==========================================
-def worker_thread(cookies, thread_id, time_delay, sender_name, messages, proxy_url):
+def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
     global stop_flag
     
     with state_lock:
@@ -100,31 +92,31 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages, proxy_u
         server_state["totalFailed"] = 0
         server_state["logs"] = []
     
-    add_log("🚀 Background worker started (24/7 Mode)...")
+    add_log("🚀 Background worker started (24/7 Non-Stop)...")
     
     cl = Client()
-    # Timeout set karein taaki library hang na ho
     cl.request_timeout = 30
     cl.read_timeout = 30
 
     sessionid = extract_cookie_value(cookies, "sessionid")
     if not sessionid:
-        add_log("❌ CRITICAL: Session ID nahi mila. Please provide valid cookies.")
+        add_log("❌ CRITICAL: Session ID nahi mila.")
         with state_lock:
             server_state["isRunning"] = False
         return
 
-    add_log("🔐 Logging into Instagram via Session ID...")
-    success, msg = login_with_timeout(cl, sessionid, proxy_url)
+    add_log("🔐 Logging into Instagram...")
+    success, msg = safe_login(cl, sessionid)
     
     if not success:
-        add_log(f"❌ {msg}")
+        add_log(f"❌ Login Failed: {msg}")
         with state_lock:
             server_state["isRunning"] = False
         return
 
     add_log(f"✅ Login Successful! UID: {cl.user_id}")
 
+    # ✅ INFINITE LOOP (Jab tak stop nahi hoga)
     loop_count = 1
     while not stop_flag:
         add_log(f"🔄 Starting File Loop #{loop_count}...")
@@ -137,6 +129,7 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages, proxy_u
             if not clean_msg:
                 continue
 
+            # Format: Here Name (Upar) + Message (Niche)
             full_message = f"{sender_name}\n{clean_msg}"
             
             with state_lock:
@@ -155,11 +148,13 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages, proxy_u
                     server_state["totalFailed"] += 1
                 add_log(f"❌ Failed {current_sent}: {err_msg}")
                 
-                if "COOKIES EXPIRED" in err_msg or "RATE LIMIT" in err_msg or "404" in err_msg:
-                    add_log("⚠️ FATAL ERROR: Stopping process.")
+                # Agar fatal error ho toh ruk jao
+                if "COOKIES EXPIRED" in err_msg:
+                    add_log("⚠️ FATAL: Cookies expired. Stopping.")
                     stop_flag = True
                     break
 
+            # Delay
             if not stop_flag:
                 add_log(f"⏱️ Waiting {time_delay} seconds...")
                 for _ in range(time_delay):
@@ -196,7 +191,6 @@ def start_process():
         thread_id = request.form.get("thread_id", "").strip()
         time_delay = int(request.form.get("time_delay", 20))
         sender_name = request.form.get("sender_name", "").strip()
-        proxy_url = request.form.get("proxy_url", "").strip() # ✅ Naya field
         file = request.files.get("message_file")
 
         if not cookies or not thread_id or not file or not sender_name:
@@ -228,7 +222,7 @@ def start_process():
         stop_flag = False
         thread = threading.Thread(
             target=worker_thread,
-            args=(cookies, thread_id, time_delay, sender_name, messages, proxy_url)
+            args=(cookies, thread_id, time_delay, sender_name, messages)
         )
         thread.daemon = True
         thread.start()
