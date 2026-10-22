@@ -1,6 +1,5 @@
 FROM node:18-slim
 
-# Install Chrome dependencies
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -17,12 +16,14 @@ RUN apt-get update && apt-get install -y \
     libfontconfig1 \
     libgbm1 \
     libnspr4 \
+    libnss3 \
     libpango-1.0-0 \
     libxcomposite1 \
     libxdamage1 \
     libxfixes3 \
     libxrandr2 \
     libasound2 \
+    libxkbcommon0 \
     fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
