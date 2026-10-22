@@ -1,7 +1,6 @@
 import os
 import time
 import threading
-import concurrent.futures
 from flask import Flask, render_template, request, jsonify
 from instagrapi import Client
 from instagrapi.exceptions import LoginRequired, ClientError
@@ -23,19 +22,23 @@ state_lock = threading.RLock()
 stop_flag = False
 
 # ==========================================
-# ⏰ 24/7 KEEP-ALIVE SYSTEM (Render Sleep Fix)
+# ⏰ KEEP-ALIVE SYSTEM (Render Sleep Fix)
 # ==========================================
 def keep_alive():
     url = os.environ.get('RENDER_EXTERNAL_URL')
     if not url:
+        print("[Keep-Alive] Local environment detected. Skipping.")
         return
+    
     ping_url = f"{url}/ping"
+    print(f"[Keep-Alive] Started. Pinging {ping_url} every 5 minutes.")
+    
     while True:
         try:
             requests.get(ping_url, timeout=10)
         except Exception:
             pass
-        time.sleep(300) # Har 5 minute mein ping karega
+        time.sleep(300) # 300 seconds = 5 minutes
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
@@ -55,34 +58,24 @@ def extract_cookie_value(cookies_str, key):
     match = re.search(rf'{key}=([^;]+)', cookies_str)
     return match.group(1).strip() if match else None
 
-# ✅ Safe Login with Timeout (Taaki atke nahi)
-def safe_login(cl, sessionid):
-    def _login():
-        cl.login_by_sessionid(sessionid)
-    
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        future = executor.submit(_login)
-        try:
-            future.result(timeout=45) # 45 seconds timeout
-            return True, "Success"
-        except concurrent.futures.TimeoutError:
-            return False, "TIMEOUT: Instagram login took too long. (IP Blocked)"
-        except Exception as e:
-            return False, str(e)
-
 def send_insta_message(cl, thread_id, text):
     try:
         cl.direct_send(text=text, thread_ids=[thread_id])
         return True, "Success"
     except LoginRequired:
-        return False, "COOKIES EXPIRED"
+        return False, "COOKIES EXPIRED: Please update your sessionid."
     except ClientError as e:
-        return False, f"API Error: {str(e)}"
+        err_msg = str(e)
+        if "404" in err_msg:
+            return False, "HTTP Error 404: Endpoint blocked or changed by Instagram."
+        elif "429" in err_msg:
+            return False, "RATE LIMIT: Too many requests! Increase Time Delay."
+        return False, f"API Error: {err_msg}"
     except Exception as e:
         return False, f"Connection Error: {str(e)}"
 
 # ==========================================
-# ⚙️ WORKER (Infinite Loop Mode)
+# ⚙️ WORKER (Infinite Loop Logic)
 # ==========================================
 def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
     global stop_flag
@@ -92,69 +85,68 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
         server_state["totalFailed"] = 0
         server_state["logs"] = []
     
-    add_log("🚀 Background worker started (24/7 Non-Stop)...")
+    add_log("🚀 Background worker started (24/7 Mode)...")
     
     cl = Client()
-    cl.request_timeout = 30
-    cl.read_timeout = 30
-
     sessionid = extract_cookie_value(cookies, "sessionid")
-    if not sessionid:
-        add_log("❌ CRITICAL: Session ID nahi mila.")
-        with state_lock:
-            server_state["isRunning"] = False
-        return
-
-    add_log("🔐 Logging into Instagram...")
-    success, msg = safe_login(cl, sessionid)
     
-    if not success:
-        add_log(f"❌ Login Failed: {msg}")
+    if not sessionid:
+        add_log("❌ CRITICAL: Session ID nahi mila. Please provide valid cookies.")
         with state_lock:
             server_state["isRunning"] = False
         return
 
-    add_log(f"✅ Login Successful! UID: {cl.user_id}")
+    try:
+        add_log("🔐 Logging into Instagram via Session ID...")
+        cl.login_by_sessionid(sessionid)
+        add_log(f"✅ Login Successful! UID: {cl.user_id}")
+    except Exception as e:
+        add_log(f"❌ Login Failed: {str(e)}")
+        with state_lock:
+            server_state["isRunning"] = False
+        return
 
-    # ✅ INFINITE LOOP (Jab tak stop nahi hoga)
+    # ✅ INFINITE LOOP: Jab tak stop_flag True nahi hoga, ye chalta rahega
     loop_count = 1
+    
     while not stop_flag:
         add_log(f"🔄 Starting File Loop #{loop_count}...")
         
-        for msg in messages:
+        for idx, msg in enumerate(messages):
             if stop_flag:
+                add_log("🛑 Execution stopped by user.")
                 break
-                
+
             clean_msg = msg.strip()
             if not clean_msg:
                 continue
 
-            # Format: Here Name (Upar) + Message (Niche)
+            # Here Name Upar, Message Niche
             full_message = f"{sender_name}\n{clean_msg}"
             
+            # Total count calculate karein (Kitne message ja chuke hain)
             with state_lock:
-                current_sent = server_state["totalSent"] + server_state["totalFailed"] + 1
+                total_processed = server_state["totalSent"] + server_state["totalFailed"] + 1
                 
-            add_log(f"Sending message [{current_sent}]...")
+            add_log(f"Sending message [{total_processed}] (File Line {idx+1}/{len(messages)})...")
 
             success, err_msg = send_insta_message(cl, thread_id, full_message)
 
             if success:
                 with state_lock:
                     server_state["totalSent"] += 1
-                add_log(f"✅ Message {current_sent} sent successfully!")
+                add_log(f"✅ Message {total_processed} sent successfully!")
             else:
                 with state_lock:
                     server_state["totalFailed"] += 1
-                add_log(f"❌ Failed {current_sent}: {err_msg}")
+                add_log(f"❌ Failed {total_processed}: {err_msg}")
                 
-                # Agar fatal error ho toh ruk jao
-                if "COOKIES EXPIRED" in err_msg:
-                    add_log("⚠️ FATAL: Cookies expired. Stopping.")
+                if "COOKIES EXPIRED" in err_msg or "RATE LIMIT" in err_msg or "404" in err_msg:
+                    add_log("⚠️ FATAL ERROR: Stopping process.")
                     stop_flag = True
                     break
 
-            # Delay
+            # Delay Check
             if not stop_flag:
                 add_log(f"⏱️ Waiting {time_delay} seconds...")
                 for _ in range(time_delay):
