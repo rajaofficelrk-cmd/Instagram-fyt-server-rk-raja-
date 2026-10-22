@@ -38,13 +38,14 @@ def extract_cookie_value(cookies_str, key):
 def send_insta_message(cookies_str, thread_id, text):
     csrf_token = extract_cookie_value(cookies_str, "csrftoken")
     if not csrf_token:
-        return False, "Cookies Invalid: CSRF token missing!"
+        return False, "CSRF token missing in cookies!"
 
-    url = "https://www.instagram.com/api/v1/direct_v2/threads/broadcast/text/"
+    # ✅ FIX: Mobile API Endpoint (i.instagram.com) instead of www.instagram.com
+    url = "https://i.instagram.com/api/v1/direct_v2/threads/broadcast/text/"
     
-    # ✅ Real Chrome Browser Headers (To avoid detection)
+    # ✅ FIX: Real Mobile App Headers
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "User-Agent": "Instagram 269.0.0.18.75 Android (28/9; 480dpi; 1080x1920; samsung; SM-G950F; dreamlte; samsungexynos8895; en_US; 312395952)",
         "Cookie": cookies_str,
         "X-CSRFToken": csrf_token,
         "X-IG-App-ID": "936619743392459",
@@ -65,11 +66,11 @@ def send_insta_message(cookies_str, thread_id, text):
     payload = {
         "thread_ids": f"[{thread_id}]",
         "text": text,
+        "action": "send_item",
         "client_context": client_context
     }
 
     try:
-        # allow_redirects=False is crucial to catch IP blocks cleanly
         response = requests.post(url, headers=headers, data=payload, timeout=15, allow_redirects=False)
         
         # If redirected, it's 100% an IP block or expired cookies
@@ -116,6 +117,7 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
         if not clean_msg:
             continue
 
+        # Here Name Upar, Message Niche
         full_message = f"{sender_name}\n{clean_msg}"
         add_log(f"Sending message [{idx + 1}/{len(messages)}]...")
 
@@ -170,7 +172,7 @@ def start_process():
         if time_delay < 5:
             time_delay = 5
 
-        # 🧩 UNIVERSAL FILE DECODER
+        # 🧩 UNIVERSAL FILE DECODER (Chahe jo file ho, sab chalegi)
         file_bytes = file.read()
         file_content = ""
         for encoding in ['utf-8', 'latin-1', 'cp1252', 'utf-16']:
