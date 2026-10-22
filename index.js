@@ -1,194 +1,193 @@
+const express = require('express');
+const multer = require('multer');
+const axios = require('axios');
+const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
+const path = require('path');
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RK RAJA | Server Panel</title>
-<style>
-:root {
-  --bg: #0a0a0a;
-  --card: rgba(20,20,20,.92);
-  --border: #303030;
-  --text: #eee;
-  --accent: #ff0033;
-  --green: #00cc66;
-}
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  padding: 20px;
-  min-height: 100vh;
-  display: flex;
-  justify-content: center;
-  background: var(--bg);
-  background-image:
-    linear-gradient(#0009,#000b),
-    url('https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png');
-  background-position: center;
-  background-size: cover;
-  background-attachment: fixed;
-  color: var(--text);
-  font-family: "Courier New", monospace;
-}
-.container {
-  width: 100%;
-  max-width: 800px;
-  padding: 24px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--card);
-  align-self: flex-start;
-}
-header { text-align: center; margin-bottom: 25px; }
-header img {
-  width: 100px;
-  height: 100px;
-  object-fit: cover;
-  border-radius: 50%;
-  border: 3px solid var(--accent);
-}
-h2 { color: var(--accent); }
-label { display: block; margin: 16px 0 7px; }
-input, button {
-  width: 100%;
-  padding: 13px;
-  border-radius: 6px;
-  font: inherit;
-}
-input {
-  color: white;
-  background: #080808;
-  border: 1px solid var(--border);
-}
-button {
-  margin-top: 16px;
-  cursor: pointer;
-  font-weight: bold;
-  border: 0;
-}
-button:disabled { opacity: .5; cursor: not-allowed; }
-#startBtn { background: var(--green); color: #000; }
-.status {
-  margin-top: 20px;
-  padding: 15px;
-  background: #080808;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow-wrap: anywhere;
-}
-#terminal {
-  height: 230px;
-  overflow-y: auto;
-  margin-top: 16px;
-  padding: 12px;
-  background: #000;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-.success { color: var(--green); }
-.error { color: #ff4444; }
-</style>
-</head>
-<body>
-<main class="container">
-  <header>
-    <img
-      src="https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png"
-      alt="RK RAJA"
-    >
-    <h2>RK RAJA SERVER</h2>
-    <p>TXT FILE VALIDATOR</p>
-  </header>
+const app = express();
+const upload = multer({ dest: 'uploads/' });
 
-  <form id="form">
-    <label for="message_file">Upload TXT file (max 1 MB)</label>
-    <input
-      id="message_file"
-      name="message_file"
-      type="file"
-      accept=".txt,text/plain"
-      required
-    >
-    <button id="startBtn" type="submit">CHECK FILE</button>
-  </form>
-
-  <section class="status">
-    <div>Server: <strong id="serverStatus">Checking...</strong></div>
-    <div>Lines validated: <strong id="lineCount">0</strong></div>
-  </section>
-
-  <section id="terminal" aria-live="polite">
-    <div> &gt; Panel initialized.</div>
-  </section>
-</main>
-
-<script>
-const form = document.getElementById("form");
-const startBtn = document.getElementById("startBtn");
-const terminal = document.getElementById("terminal");
-const serverStatus = document.getElementById("serverStatus");
-const lineCount = document.getElementById("lineCount");
-
-function log(message, type = "") {
-  const div = document.createElement("div");
-  div.className = type;
-  div.textContent = "> " + message;
-  terminal.appendChild(div);
-  terminal.scrollTop = terminal.scrollHeight;
+// Ensure uploads folder exists
+if (!fs.existsSync('uploads')) {
+    fs.mkdirSync('uploads');
 }
 
-async function checkHealth() {
-  try {
-    const response = await fetch("/health", {
-      cache: "no-store"
-    });
-    if (!response.ok) throw new Error("Server unavailable");
-    const data = await response.json();
-    serverStatus.textContent = data.status.toUpperCase();
-    serverStatus.className = "success";
-  } catch {
-    serverStatus.textContent = "OFFLINE";
-    serverStatus.className = "error";
-  }
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Server State Tracker
+let serverState = {
+    isRunning: false,
+    totalSent: 0,
+    totalFailed: 0,
+    logs: []
+};
+let stopFlag = false;
+
+function addLog(msg) {
+    const timestamp = new Date().toLocaleTimeString();
+    const logMsg = `[${timestamp}] ${msg}`;
+    serverState.logs.push(logMsg);
+    if (serverState.logs.length > 150) serverState.logs.shift();
+    console.log(logMsg);
 }
 
-form.addEventListener("submit", async event => {
-  event.preventDefault();
+function extractCsrf(cookiesStr) {
+    const match = cookiesStr.match(/csrftoken=([^;]+)/);
+    return match ? match[1].trim() : null;
+}
 
-  if (!form.reportValidity()) return;
-
-  startBtn.disabled = true;
-  lineCount.textContent = "0";
-
-  const formData = new FormData(form);
-
-  try {
-    const response = await fetch("/api/start", {
-      method: "POST",
-      body: formData
-    });
-
-    const data = await response.json();
-
-    if (!response.ok || data.status !== "success") {
-      throw new Error(data.message || "Request failed");
+async function sendInstaMessage(cookiesStr, threadId, text) {
+    const csrfToken = extractCsrf(cookiesStr);
+    if (!csrfToken) {
+        return { success: false, error: "CSRF token not found in cookies" };
     }
 
-    lineCount.textContent = String(data.messageCount);
-    log(data.message, "success");
-  } catch (error) {
-    log(error.message || "Network error", "error");
-  } finally {
-    startBtn.disabled = false;
-    await checkHealth();
-  }
+    const url = "https://www.instagram.com/api/v1/direct_v2/threads/broadcast/text/";
+    const headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Cookie": cookiesStr,
+        "X-CSRFToken": csrfToken,
+        "X-IG-App-ID": "936619743392459",
+        "X-ASBD-ID": "198387",
+        "X-IG-Www-Claim": "0",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Requested-With": "XMLHttpRequest",
+        "Origin": "https://www.instagram.com",
+        "Referer": `https://www.instagram.com/direct/t/${threadId}/`,
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9"
+    };
+
+    const payload = new URLSearchParams({
+        thread_ids: `[${threadId}]`,
+        text: text,
+        client_context: uuidv4()
+    });
+
+    try {
+        const response = await axios.post(url, payload.toString(), { 
+            headers, 
+            timeout: 15000,
+            maxRedirects: 0, 
+            validateStatus: function (status) {
+                return status >= 200 && status < 400;
+            }
+        });
+
+        if (response.status >= 300 && response.status < 400) {
+            return { success: false, error: "Blocked! Instagram redirected to Login. (IP Block or Bad Cookies)" };
+        }
+
+        if (response.status === 200 && response.data && response.data.status === "ok") {
+            return { success: true };
+        } else {
+            return { success: false, error: `API Error: ${response.data?.message || 'Unknown'}` };
+        }
+    } catch (err) {
+        const errorMsg = err.response?.data?.message || err.message;
+        return { success: false, error: errorMsg };
+    }
+}
+
+async function runWorker(cookies, threadId, timeDelay, senderName, messages) {
+    serverState.isRunning = true;
+    serverState.totalSent = 0;
+    serverState.totalFailed = 0;
+    serverState.logs = [];
+    stopFlag = false;
+
+    addLog("> 🚀 Server task started...");
+
+    for (let i = 0; i < messages.length; i++) {
+        if (stopFlag) {
+            addLog("> 🛑 Execution stopped by user.");
+            break;
+        }
+
+        const fullMessage = `${senderName}\n${messages[i].trim()}`;
+        addLog(`> Sending message [${i + 1}/${messages.length}]...`);
+
+        const result = await sendInstaMessage(cookies, threadId, fullMessage);
+
+        if (result.success) {
+            serverState.totalSent++;
+            addLog("> ✅ Sent successfully!");
+        } else {
+            serverState.totalFailed++;
+            addLog(`> ❌ Failed: ${result.error}`);
+            
+            if (result.error.includes("Blocked")) {
+                addLog("> ⚠️ Stopping process due to Block/Redirect.");
+                break; 
+            }
+        }
+
+        if (i < messages.length - 1 && !stopFlag) {
+            addLog(`> ⏱️ Waiting ${timeDelay} seconds...`);
+            for (let s = 0; s < timeDelay; s++) {
+                if (stopFlag) break;
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+    }
+
+    serverState.isRunning = false;
+    addLog("> 🎉 Task finished.");
+}
+
+app.post('/api/start', upload.single('message_file'), async (req, res) => {
+    if (serverState.isRunning) {
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        return res.json({ status: "error", message: "Server is already running!" });
+    }
+
+    const { cookies, thread_id, sender_name } = req.body;
+    const timeDelay = parseInt(req.body.time_delay || 10, 10);
+    const file = req.file;
+
+    if (!cookies || !thread_id || !file || !sender_name) {
+        if (file && fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+        }
+        return res.json({ status: "error", message: "All fields are required!" });
+    }
+
+    try {
+        const fileContent = fs.readFileSync(file.path, 'utf-8');
+        fs.unlinkSync(file.path);
+        const messages = fileContent.split(/\r?\n/).filter(line => line.trim() !== '');
+
+        if (messages.length === 0) {
+            return res.json({ status: "error", message: "Message file is empty!" });
+        }
+
+        runWorker(cookies, thread_id, timeDelay, sender_name, messages);
+
+        res.json({ status: "success", message: "Started successfully" });
+    } catch (e) {
+        serverState.isRunning = false;
+        if (file && fs.existsSync(file.path)) {
+            try { fs.unlinkSync(file.path); } catch (err) {}
+        }
+        res.json({ status: "error", message: e.message });
+    }
 });
 
-checkHealth();
-setInterval(checkHealth, 15000);
-</script>
-</body>
-</html>
+app.post('/api/stop', (req, res) => {
+    stopFlag = true;
+    res.json({ status: "success", message: "Stopping..." });
+});
+
+app.get('/api/status', (req, res) => {
+    res.json(serverState);
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
+});
