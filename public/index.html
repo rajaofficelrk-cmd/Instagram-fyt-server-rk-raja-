@@ -8,7 +8,6 @@
         :root { --bg: #0a0a0a; --card: rgba(20, 20, 20, 0.85); --border: #2a2a2a; --text: #e0e0e0; --accent: #ff0033; --green: #00cc66; --red: #ff3333; }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Courier New', monospace; }
         
-        /* ✅ BACKGROUND MEIN AAPKI PHOTO */
         body { 
             background-color: var(--bg);
             background-image: url('https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png');
@@ -35,7 +34,6 @@
             box-shadow: 0 0 30px rgba(0,0,0,0.8); 
         }
         
-        /* ✅ HEADER MEIN AAPKI PHOTO */
         .header-area { text-align: center; margin-bottom: 25px; display: flex; flex-direction: column; align-items: center;}
         .header-area img { 
             width: 120px; 
@@ -158,21 +156,29 @@
         }
 
         startBtn.addEventListener('click', async () => {
-            if (!form.checkValidity()) { form.reportValidity(); return; }
+            if (!form.checkValidity()) { 
+                form.reportValidity(); 
+                return; 
+            }
+            
             const formData = new FormData(form);
-            terminal.innerHTML = '';
             startBtn.disabled = true;
             printLog("> Starting server...", 'normal');
 
             try {
                 const res = await fetch('/api/start', { method: 'POST', body: formData });
                 const data = await res.json();
+                
                 if (data.status === 'error') {
                     alert(data.message);
                     startBtn.disabled = false;
+                    printLog(`> ❌ Error: ${data.message}`, 'error');
                     return;
                 }
-                if (!pollingInterval) pollingInterval = setInterval(checkStatus, 2000);
+                
+                if (!pollingInterval) {
+                    pollingInterval = setInterval(checkStatus, 2000);
+                }
                 checkStatus();
             } catch (err) {
                 printLog("> ❌ Network Error connecting to server.", 'error');
@@ -183,12 +189,16 @@
         stopBtn.addEventListener('click', async () => {
             stopBtn.disabled = true;
             printLog("> Stopping execution...", 'error');
-            try { await fetch('/api/stop', { method: 'POST' }); } catch (e) {}
+            try { 
+                await fetch('/api/stop', { method: 'POST' }); 
+            } catch (e) {}
         });
 
         window.onload = () => {
             checkStatus();
-            pollingInterval = setInterval(checkStatus, 3000);
+            if (!pollingInterval) {
+                pollingInterval = setInterval(checkStatus, 3000);
+            }
         };
     </script>
 </body>
