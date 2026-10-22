@@ -10,7 +10,6 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# Global state tracker
 server_state = {
     "isRunning": False,
     "totalSent": 0,
@@ -18,7 +17,6 @@ server_state = {
     "logs": []
 }
 
-# ✅ CRITICAL FIX: Use RLock instead of Lock to prevent Deadlocks (Server Freeze)
 state_lock = threading.RLock()
 stop_flag = False
 
@@ -40,12 +38,12 @@ def send_insta_message(cookies_str, thread_id, text):
     if not csrf_token:
         return False, "CSRF token missing in cookies!"
 
-    # ✅ FIX: Mobile API Endpoint (i.instagram.com) instead of www.instagram.com
-    url = "https://i.instagram.com/api/v1/direct_v2/threads/broadcast/text/"
+    # ✅ FIX: Using Desktop Web API endpoint for Render hosting compatibility
+    url = f"https://www.instagram.com/api/v1/web/direct_v2/threads/broadcast/text/"
     
-    # ✅ FIX: Real Mobile App Headers
+    # ✅ FIX: Authentic Desktop Chrome Headers to bypass Render restrictions
     headers = {
-        "User-Agent": "Instagram 269.0.0.18.75 Android (28/9; 480dpi; 1080x1920; samsung; SM-G950F; dreamlte; samsungexynos8895; en_US; 312395952)",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Cookie": cookies_str,
         "X-CSRFToken": csrf_token,
         "X-IG-App-ID": "936619743392459",
@@ -71,19 +69,17 @@ def send_insta_message(cookies_str, thread_id, text):
     }
 
     try:
-        response = requests.post(url, headers=headers, data=payload, timeout=15, allow_redirects=False)
+        response = requests.post(url, headers=headers, data=payload, timeout=20, allow_redirects=False)
         
-        # If redirected, it's 100% an IP block or expired cookies
         if response.status_code in [301, 302, 303, 307, 308]:
-            return False, "BLOCKED: Instagram redirect to Login. (Render IP Blacklisted or Expired Cookies)"
+            return False, "BLOCKED: Instagram redirect (Render IP / Expired Cookies)"
             
-        # Handle JSON errors safely
         try:
             json_data = response.json()
         except ValueError:
             if response.status_code == 429:
-                return False, "RATE LIMIT: Too many requests! Increase Time Delay."
-            return False, f"HTTP Error {response.status_code}: Invalid response from IG."
+                return False, "RATE LIMIT: Too many requests! Increase delay."
+            return False, f"HTTP Error {response.status_code}: Invalid response from Instagram."
 
         if response.status_code == 200 and json_data.get("status") == "ok":
             return True, "Success"
@@ -106,7 +102,7 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
         server_state["totalFailed"] = 0
         server_state["logs"] = []
     
-    add_log("🚀 Background worker started...")
+    add_log("🚀 Background worker started on Render...")
     
     for idx, msg in enumerate(messages):
         if stop_flag:
@@ -117,7 +113,6 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
         if not clean_msg:
             continue
 
-        # Here Name Upar, Message Niche
         full_message = f"{sender_name}\n{clean_msg}"
         add_log(f"Sending message [{idx + 1}/{len(messages)}]...")
 
@@ -132,9 +127,8 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
                 server_state["totalFailed"] += 1
             add_log(f"❌ Failed {idx + 1}: {err_msg}")
             
-            # If fatal error, break immediately to save time
             if "BLOCKED" in err_msg or "COOKIES EXPIRED" in err_msg or "RATE LIMIT" in err_msg:
-                add_log("⚠️ FATAL ERROR: Stopping process. Fix Cookies/IP to continue.")
+                add_log("⚠️ FATAL ERROR: Stopping process. Fix cookies.")
                 break
 
         if idx < len(messages) - 1 and not stop_flag:
@@ -162,17 +156,17 @@ def start_process():
     try:
         cookies = request.form.get("cookies", "").strip()
         thread_id = request.form.get("thread_id", "").strip()
-        time_delay = int(request.form.get("time_delay", 15))
+        time_delay = int(request.form.get("time_delay", 20))
         sender_name = request.form.get("sender_name", "").strip()
         file = request.files.get("message_file")
 
         if not cookies or not thread_id or not file or not sender_name:
             return jsonify({"status": "error", "message": "All fields are required!"})
 
-        if time_delay < 5:
-            time_delay = 5
+        if time_delay < 10:
+            time_delay = 10
 
-        # 🧩 UNIVERSAL FILE DECODER (Chahe jo file ho, sab chalegi)
+        # Universal File Decoder
         file_bytes = file.read()
         file_content = ""
         for encoding in ['utf-8', 'latin-1', 'cp1252', 'utf-16']:
