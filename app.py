@@ -1,10 +1,9 @@
 import os
 import time
-import uuid
-import requests
 import threading
-import re
 from flask import Flask, render_template, request, jsonify
+from instagrapi import Client
+from instagrapi.exceptions import LoginRequired, ClientError
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -17,6 +16,7 @@ server_state = {
     "logs": []
 }
 
+# ✅ RLock use kar rahe hain taaki server freeze na ho
 state_lock = threading.RLock()
 stop_flag = False
 
@@ -30,66 +30,25 @@ def add_log(message):
     print(log_msg)
 
 def extract_cookie_value(cookies_str, key):
+    import re
     match = re.search(rf'{key}=([^;]+)', cookies_str)
     return match.group(1).strip() if match else None
 
-def send_insta_message(cookies_str, thread_id, text):
-    csrf_token = extract_cookie_value(cookies_str, "csrftoken")
-    if not csrf_token:
-        return False, "CSRF token missing in cookies!"
-
-    # ✅ FIXED: Correct Instagram Direct Broadcast Endpoint (Fixes 404 Error)
-    url = "https://www.instagram.com/api/v1/direct_v2/threads/broadcast/text/"
-    
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Cookie": cookies_str,
-        "X-CSRFToken": csrf_token,
-        "X-IG-App-ID": "936619743392459",
-        "X-ASBD-ID": "129477",
-        "X-IG-WWW-Claim": "0",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "X-Requested-With": "XMLHttpRequest",
-        "Origin": "https://www.instagram.com",
-        "Referer": f"https://www.instagram.com/direct/t/{thread_id}/",
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-origin"
-    }
-
-    client_context = str(uuid.uuid4())
-    payload = {
-        "thread_ids": f"[{thread_id}]",
-        "text": text,
-        "action": "send_item",
-        "client_context": client_context
-    }
-
+def send_insta_message(cl, thread_id, text):
     try:
-        response = requests.post(url, headers=headers, data=payload, timeout=20, allow_redirects=False)
-        
-        if response.status_code in [301, 302, 303, 307, 308]:
-            return False, "BLOCKED: Instagram redirect (Render IP / Expired Cookies)"
-            
-        try:
-            json_data = response.json()
-        except ValueError:
-            if response.status_code == 429:
-                return False, "RATE LIMIT: Too many requests! Increase delay."
-            return False, f"HTTP Error {response.status_code}: Invalid response from Instagram."
-
-        if response.status_code == 200 and json_data.get("status") == "ok":
-            return True, "Success"
-        else:
-            error_msg = json_data.get("message") or json_data.get("error_type") or "Unknown Error"
-            if "login_required" in error_msg or "checkpoint" in error_msg:
-                return False, f"COOKIES EXPIRED: {error_msg}"
-            return False, f"API Error: {error_msg}"
-            
-    except requests.exceptions.Timeout:
-        return False, "TIMEOUT: Instagram took too long to respond."
+        # ✅ instagrapi ka direct_send method use karein
+        # Ye library khud se signed_body aur zaroori headers manage karti hai
+        cl.direct_send(text=text, thread_ids=[thread_id])
+        return True, "Success"
+    except LoginRequired:
+        return False, "COOKIES EXPIRED: Please update your sessionid."
+    except ClientError as e:
+        err_msg = str(e)
+        if "404" in err_msg:
+            return False, "HTTP Error 404: Endpoint blocked or changed by Instagram."
+        elif "429" in err_msg:
+            return False, "RATE LIMIT: Too many requests! Increase Time Delay."
+        return False, f"API Error: {err_msg}"
     except Exception as e:
         return False, f"Connection Error: {str(e)}"
 
@@ -101,8 +60,27 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
         server_state["totalFailed"] = 0
         server_state["logs"] = []
     
-    add_log("🚀 Background worker started on Render...")
+    add_log("🚀 Background worker started (using instagrapi)...")
     
+    cl = Client()
+    sessionid = extract_cookie_value(cookies, "sessionid")
+    
+    if not sessionid:
+        add_log("❌ CRITICAL: Session ID nahi mila. Please provide valid cookies.")
+        with state_lock:
+            server_state["isRunning"] = False
+        return
+
+    try:
+        add_log("🔐 Logging into Instagram via Session ID...")
+        cl.login_by_sessionid(sessionid)
+        add_log(f"✅ Login Successful! UID: {cl.user_id}")
+    except Exception as e:
+        add_log(f"❌ Login Failed: {str(e)}")
+        with state_lock:
+            server_state["isRunning"] = False
+        return
+
     for idx, msg in enumerate(messages):
         if stop_flag:
             add_log("🛑 Execution stopped by user.")
@@ -112,10 +90,11 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
         if not clean_msg:
             continue
 
+        # Here Name Upar, Message Niche
         full_message = f"{sender_name}\n{clean_msg}"
         add_log(f"Sending message [{idx + 1}/{len(messages)}]...")
 
-        success, err_msg = send_insta_message(cookies, thread_id, full_message)
+        success, err_msg = send_insta_message(cl, thread_id, full_message)
 
         if success:
             with state_lock:
@@ -126,8 +105,8 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
                 server_state["totalFailed"] += 1
             add_log(f"❌ Failed {idx + 1}: {err_msg}")
             
-            if "BLOCKED" in err_msg or "COOKIES EXPIRED" in err_msg or "RATE LIMIT" in err_msg:
-                add_log("⚠️ FATAL ERROR: Stopping process. Fix cookies.")
+            if "COOKIES EXPIRED" in err_msg or "RATE LIMIT" in err_msg or "404" in err_msg:
+                add_log("⚠️ FATAL ERROR: Stopping process.")
                 break
 
         if idx < len(messages) - 1 and not stop_flag:
@@ -165,7 +144,6 @@ def start_process():
         if time_delay < 10:
             time_delay = 10
 
-        # Universal File Decoder
         file_bytes = file.read()
         file_content = ""
         for encoding in ['utf-8', 'latin-1', 'cp1252', 'utf-16']:
