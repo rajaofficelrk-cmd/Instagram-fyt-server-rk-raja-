@@ -10,7 +10,6 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# Global state tracker
 server_state = {
     "isRunning": False,
     "totalSent": 0,
@@ -41,9 +40,8 @@ def send_insta_message(cookies_str, thread_id, text):
 
     url = "https://www.instagram.com/api/v1/direct_v2/threads/broadcast/text/"
     
-    # Real Desktop Chrome Headers
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 299.0.0.28.110",
         "Cookie": cookies_str,
         "X-CSRFToken": csrf_token,
         "X-IG-App-ID": "936619743392459",
@@ -58,8 +56,6 @@ def send_insta_message(cookies_str, thread_id, text):
     }
 
     client_context = str(uuid.uuid4())
-    
-    # Instagram Web Broadcast Payload format
     payload = {
         "thread_ids": f"[{thread_id}]",
         "text": text,
@@ -70,22 +66,19 @@ def send_insta_message(cookies_str, thread_id, text):
     try:
         response = requests.post(url, headers=headers, data=payload, timeout=20, allow_redirects=False)
         
-        # Check for IP block or redirect
         if response.status_code in [301, 302, 303, 307, 308]:
-            return False, "Blocked! Instagram redirected the request (IP/Account check)."
+            return False, "Blocked! Instagram redirected (Render IP restricted)."
             
-        # Try parsing JSON response
         try:
             json_data = response.json()
         except Exception:
-            return False, f"Invalid Server Response (HTTP {response.status_code}): {response.text[:150]}"
+            return False, f"Invalid Response (HTTP {response.status_code})"
 
         if response.status_code == 200 and json_data.get("status") == "ok":
             return True, "Success"
         else:
-            # Print exact instagram error message
-            error_msg = json_data.get("message") or json_data.get("error_type") or str(json_data)
-            return False, f"Instagram API Error: {error_msg}"
+            error_msg = json_data.get("message") or json_data.get("error_type") or "Unknown Error"
+            return False, f"API Error: {error_msg}"
             
     except Exception as e:
         return False, f"Connection Error: {str(e)}"
@@ -98,7 +91,7 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
         server_state["totalFailed"] = 0
         server_state["logs"] = []
     
-    add_log("🚀 Server task started...")
+    add_log("🚀 Server task started on Render...")
     
     for idx, msg in enumerate(messages):
         if stop_flag:
@@ -147,15 +140,15 @@ def start_process():
     try:
         cookies = request.form.get("cookies", "").strip()
         thread_id = request.form.get("thread_id", "").strip()
-        time_delay = int(request.form.get("time_delay", 10))
+        time_delay = int(request.form.get("time_delay", 15))
         sender_name = request.form.get("sender_name", "").strip()
         file = request.files.get("message_file")
 
         if not cookies or not thread_id or not file or not sender_name:
             raise ValueError("All fields are required!")
 
-        if time_delay < 5:
-            raise ValueError("Time delay must be at least 5 seconds!")
+        if time_delay < 10:
+            raise ValueError("Time delay must be at least 10 seconds for Render!")
 
         lines = file.read().decode("utf-8", errors="ignore").splitlines()
         messages = [line for line in lines if line.strip()]
@@ -189,11 +182,12 @@ def stop_process():
         server_state["isRunning"] = False
     return jsonify({"status": "success", "message": "Stopping..."})
 
+@app.route("/api/status", methodologies=["GET"]) # wait, let's keep methods=["GET"]
 @app.route("/api/status", methods=["GET"])
 def get_status():
     with state_lock:
         return jsonify(server_state)
 
 if __name__ == "__main__":
-    print("🚀 Starting Local Server on http://127.0.0.1:5000")
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
