@@ -38,10 +38,9 @@ def send_insta_message(cookies_str, thread_id, text):
     if not csrf_token:
         return False, "CSRF token missing in cookies!"
 
-    # ✅ FIX: Using Desktop Web API endpoint for Render hosting compatibility
-    url = f"https://www.instagram.com/api/v1/web/direct_v2/threads/broadcast/text/"
+    # ✅ FIXED: Correct Instagram Direct Broadcast Endpoint (Fixes 404 Error)
+    url = "https://www.instagram.com/api/v1/direct_v2/threads/broadcast/text/"
     
-    # ✅ FIX: Authentic Desktop Chrome Headers to bypass Render restrictions
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Cookie": cookies_str,
