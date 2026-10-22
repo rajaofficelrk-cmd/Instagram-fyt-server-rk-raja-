@@ -5,7 +5,6 @@ import requests
 import threading
 import re
 from flask import Flask, render_template, request, jsonify
-from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -19,7 +18,6 @@ server_state = {
     "logs": []
 }
 
-# 🔒 Lock for duplicate requests and state sync
 state_lock = threading.Lock()
 stop_flag = False
 
@@ -32,18 +30,18 @@ def add_log(message):
             server_state["logs"].pop(0)
     print(log_msg)
 
-def extract_csrf(cookies_str):
-    match = re.search(r'csrftoken=([^;]+)', cookies_str)
+def extract_cookie_value(cookies_str, key):
+    match = re.search(rf'{key}=([^;]+)', cookies_str)
     return match.group(1).strip() if match else None
 
 def send_insta_message(cookies_str, thread_id, text):
-    csrf_token = extract_csrf(cookies_str)
+    csrf_token = extract_cookie_value(cookies_str, "csrftoken")
     if not csrf_token:
-        return False, "CSRF token not found in cookies"
+        return False, "CSRF token missing in cookies!"
 
     url = "https://www.instagram.com/api/v1/direct_v2/threads/broadcast/text/"
     
-    # ✅ Real Browser Headers
+    # Real Desktop Chrome Headers
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Cookie": cookies_str,
@@ -56,39 +54,41 @@ def send_insta_message(cookies_str, thread_id, text):
         "Origin": "https://www.instagram.com",
         "Referer": f"https://www.instagram.com/direct/t/{thread_id}/",
         "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-origin"
+        "Accept-Language": "en-US,en;q=0.9"
     }
 
     client_context = str(uuid.uuid4())
+    
+    # Instagram Web Broadcast Payload format
     payload = {
         "thread_ids": f"[{thread_id}]",
         "text": text,
+        "action": "send_item",
         "client_context": client_context
     }
 
     try:
-        response = requests.post(url, headers=headers, data=payload, timeout=15, allow_redirects=False)
+        response = requests.post(url, headers=headers, data=payload, timeout=20, allow_redirects=False)
         
+        # Check for IP block or redirect
         if response.status_code in [301, 302, 303, 307, 308]:
-            return False, "Blocked! Render IP Blacklisted by Instagram."
+            return False, "Blocked! Instagram redirected the request (IP/Account check)."
             
-        if response.status_code == 200:
-            try:
-                json_data = response.json()
-                if json_data.get("status") == "ok":
-                    return True, "Success"
-                else:
-                    return False, f"API Error: {json_data.get('message', 'Unknown')}"
-            except ValueError:
-                return False, "Invalid JSON (Cookies Expired or Blocked)"
+        # Try parsing JSON response
+        try:
+            json_data = response.json()
+        except Exception:
+            return False, f"Invalid Server Response (HTTP {response.status_code}): {response.text[:150]}"
+
+        if response.status_code == 200 and json_data.get("status") == "ok":
+            return True, "Success"
         else:
-            return False, f"HTTP Error: {response.status_code}"
+            # Print exact instagram error message
+            error_msg = json_data.get("message") or json_data.get("error_type") or str(json_data)
+            return False, f"Instagram API Error: {error_msg}"
             
     except Exception as e:
-        return False, str(e)
+        return False, f"Connection Error: {str(e)}"
 
 def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
     global stop_flag
@@ -105,7 +105,6 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
             add_log("🛑 Execution stopped by user.")
             break
 
-        # Here Name Upar, Message Niche
         full_message = f"{sender_name}\n{msg.strip()}"
         add_log(f"Sending message [{idx + 1}/{len(messages)}]...")
 
@@ -119,9 +118,8 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
                 server_state["totalFailed"] += 1
                 add_log(f"❌ Failed: {err_msg}")
         
-        # Agar block mila toh aage mat bhejo
-        if "Blocked" in err_msg:
-            add_log("⚠️ Stopping process due to Block/Redirect.")
+        if "Blocked" in err_msg or "login_required" in err_msg:
+            add_log("⚠️ Stopping process due to Instagram security block.")
             break
 
         if idx < len(messages) - 1 and not stop_flag:
@@ -165,7 +163,6 @@ def start_process():
         if not messages:
             raise ValueError("Message file is empty!")
 
-        # Sab check hone ke baad hi state ko True karein
         with state_lock:
             server_state["isRunning"] = True
 
@@ -198,5 +195,5 @@ def get_status():
         return jsonify(server_state)
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    print("🚀 Starting Local Server on http://127.0.0.1:5000")
+    app.run(host="127.0.0.1", port=5000, debug=True)
