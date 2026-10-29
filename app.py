@@ -38,7 +38,7 @@ def keep_alive():
             requests.get(ping_url, timeout=10)
         except Exception:
             pass
-        time.sleep(300) # 300 seconds = 5 minutes
+        time.sleep(300)
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
@@ -63,21 +63,148 @@ def send_insta_message(cl, thread_id, text):
         cl.direct_send(text=text, thread_ids=[thread_id])
         return True, "Success"
     except LoginRequired:
-        return False, "COOKIES EXPIRED: Please update your sessionid."
+        return False, "COOKIES EXPIRED"
     except ClientError as e:
         err_msg = str(e)
         if "404" in err_msg:
-            return False, "HTTP Error 404: Endpoint blocked or changed by Instagram."
+            return False, "HTTP Error 404"
         elif "429" in err_msg:
-            return False, "RATE LIMIT: Too many requests! Increase Time Delay."
+            return False, "RATE LIMIT"
         return False, f"API Error: {err_msg}"
     except Exception as e:
         return False, f"Connection Error: {str(e)}"
 
 # ==========================================
-# ⚙️ WORKER (Infinite Loop Logic)
+# ⚙️ WORKER THREADS (Sequential & Parallel)
 # ==========================================
-def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
+
+def run_sequential(cookie_lines, thread_id, time_delay, sender_name, messages):
+    """Ek ID poori file bhejegi, fir dusri ID shuru hogi."""
+    add_log("🚀 Starting SEQUENTIAL Mode (Ek ke baad ek)...")
+    loop_count = 1
+    
+    while not stop_flag:
+        add_log(f"🔄 Starting Round #{loop_count}")
+        
+        for i, cookies in enumerate(cookie_lines):
+            if stop_flag: break
+            acc_num = i + 1
+            sessionid = extract_cookie_value(cookies, "sessionid")
+            if not sessionid:
+                add_log(f"⚠️ [ID {acc_num}] Session ID missing. Skip.")
+                continue
+
+            cl = Client()
+            try:
+                add_log(f"🔐 [ID {acc_num}] Logging in...")
+                cl.login_by_sessionid(sessionid)
+                add_log(f"✅ [ID {acc_num}] Login Successful (UID: {cl.user_id})")
+            except Exception as e:
+                add_log(f"❌ [ID {acc_num}] Login Failed: {str(e)}")
+                continue
+
+            for idx, msg in enumerate(messages):
+                if stop_flag: break
+                clean_msg = msg.strip()
+                if not clean_msg: continue
+
+                full_message = f"{sender_name}\n{clean_msg}"
+                
+                with state_lock:
+                    total_processed = server_state["totalSent"] + server_state["totalFailed"] + 1
+                    
+                add_log(f"[ID {acc_num}] Sending msg [{total_processed}]...")
+                success, err_msg = send_insta_message(cl, thread_id, full_message)
+
+                if success:
+                    with state_lock: server_state["totalSent"] += 1
+                    add_log(f"✅ [ID {acc_num}] Sent successfully!")
+                else:
+                    with state_lock: server_state["totalFailed"] += 1
+                    add_log(f"❌ [ID {acc_num}] Failed: {err_msg}")
+                    
+                    if "COOKIES EXPIRED" in err_msg or "RATE LIMIT" in err_msg:
+                        add_log(f"⚠️ [ID {acc_num}] Stopping this ID.")
+                        break
+
+                # Delay between messages
+                if not stop_flag:
+                    for _ in range(time_delay):
+                        if stop_flag: break
+                        time.sleep(1)
+            
+            add_log(f"⏳ [ID {acc_num}] Completed file. Moving to next...")
+            time.sleep(3) # Gap between switching IDs
+            
+        loop_count += 1
+
+
+def run_parallel(cookie_lines, thread_id, time_delay, sender_name, messages):
+    """Saari IDs ek saath messages bhejengi."""
+    add_log("🚀 Starting PARALLEL Mode (Ek Sath)...")
+    
+    def single_id_worker(cookies, acc_num):
+        sessionid = extract_cookie_value(cookies, "sessionid")
+        if not sessionid: return
+        
+        cl = Client()
+        try:
+            add_log(f"🔐 [ID {acc_num}] Logging in...")
+            cl.login_by_sessionid(sessionid)
+            add_log(f"✅ [ID {acc_num}] Login Successful (UID: {cl.user_id})")
+        except Exception as e:
+            add_log(f"❌ [ID {acc_num}] Login Failed: {str(e)}")
+            return
+
+        loop_count = 1
+        while not stop_flag:
+            add_log(f"🔄 [ID {acc_num}] Round #{loop_count}")
+            for msg in messages:
+                if stop_flag: break
+                clean_msg = msg.strip()
+                if not clean_msg: continue
+
+                full_message = f"{sender_name}\n{clean_msg}"
+                
+                with state_lock:
+                    total_processed = server_state["totalSent"] + server_state["totalFailed"] + 1
+                    
+                add_log(f"[ID {acc_num}] Sending msg [{total_processed}]...")
+                success, err_msg = send_insta_message(cl, thread_id, full_message)
+
+                if success:
+                    with state_lock: server_state["totalSent"] += 1
+                    add_log(f"✅ [ID {acc_num}] Sent successfully!")
+                else:
+                    with state_lock: server_state["totalFailed"] += 1
+                    add_log(f"❌ [ID {acc_num}] Failed: {err_msg}")
+                    
+                    if "COOKIES EXPIRED" in err_msg or "RATE LIMIT" in err_msg:
+                        add_log(f"⚠️ [ID {acc_num}] Stopping this ID.")
+                        return
+
+                if not stop_flag:
+                    for _ in range(time_delay):
+                        if stop_flag: break
+                        time.sleep(1)
+            loop_count += 1
+
+    threads = []
+    for i, cookies in enumerate(cookie_lines):
+        t = threading.Thread(target=single_id_worker, args=(cookies, i+1))
+        t.daemon = True
+        t.start()
+        threads.append(t)
+        time.sleep(3) # Gap so all accounts don't login at the exact same millisecond
+        
+    for t in threads:
+        t.join()
+
+
+# ==========================================
+# 🧠 MASTER WORKER
+# ==========================================
+def worker_thread(cookies_raw, thread_id, time_delay, sender_name, messages, run_mode):
     global stop_flag
     
     with state_lock:
@@ -85,75 +212,20 @@ def worker_thread(cookies, thread_id, time_delay, sender_name, messages):
         server_state["totalFailed"] = 0
         server_state["logs"] = []
     
-    add_log("🚀 Background worker started (24/7 Mode)...")
+    # Split cookies into lines
+    cookie_lines = [line.strip() for line in cookies_raw.split('\n') if line.strip()]
     
-    cl = Client()
-    sessionid = extract_cookie_value(cookies, "sessionid")
-    
-    if not sessionid:
-        add_log("❌ CRITICAL: Session ID nahi mila. Please provide valid cookies.")
-        with state_lock:
-            server_state["isRunning"] = False
+    if not cookie_lines:
+        add_log("❌ CRITICAL: Koi valid Cookies nahi mile.")
+        with state_lock: server_state["isRunning"] = False
         return
 
-    try:
-        add_log("🔐 Logging into Instagram via Session ID...")
-        cl.login_by_sessionid(sessionid)
-        add_log(f"✅ Login Successful! UID: {cl.user_id}")
-    except Exception as e:
-        add_log(f"❌ Login Failed: {str(e)}")
-        with state_lock:
-            server_state["isRunning"] = False
-        return
+    add_log(f"📁 Total {len(cookie_lines)} IDs found. Mode: {run_mode.upper()}")
 
-    # ✅ INFINITE LOOP: Jab tak stop_flag True nahi hoga, ye chalta rahega
-    loop_count = 1
-    
-    while not stop_flag:
-        add_log(f"🔄 Starting File Loop #{loop_count}...")
-        
-        for idx, msg in enumerate(messages):
-            if stop_flag:
-                add_log("🛑 Execution stopped by user.")
-                break
-
-            clean_msg = msg.strip()
-            if not clean_msg:
-                continue
-
-            # Here Name Upar, Message Niche
-            full_message = f"{sender_name}\n{clean_msg}"
-            
-            # Total count calculate karein (Kitne message ja chuke hain)
-            with state_lock:
-                total_processed = server_state["totalSent"] + server_state["totalFailed"] + 1
-                
-            add_log(f"Sending message [{total_processed}] (File Line {idx+1}/{len(messages)})...")
-
-            success, err_msg = send_insta_message(cl, thread_id, full_message)
-
-            if success:
-                with state_lock:
-                    server_state["totalSent"] += 1
-                add_log(f"✅ Message {total_processed} sent successfully!")
-            else:
-                with state_lock:
-                    server_state["totalFailed"] += 1
-                add_log(f"❌ Failed {total_processed}: {err_msg}")
-                
-                if "COOKIES EXPIRED" in err_msg or "RATE LIMIT" in err_msg or "404" in err_msg:
-                    add_log("⚠️ FATAL ERROR: Stopping process.")
-                    stop_flag = True
-                    break
-
-            # Delay Check
-            if not stop_flag:
-                add_log(f"⏱️ Waiting {time_delay} seconds...")
-                for _ in range(time_delay):
-                    if stop_flag: break
-                    time.sleep(1)
-        
-        loop_count += 1
+    if run_mode == 'sequential':
+        run_sequential(cookie_lines, thread_id, time_delay, sender_name, messages)
+    else:
+        run_parallel(cookie_lines, thread_id, time_delay, sender_name, messages)
 
     with state_lock:
         server_state["isRunning"] = False
@@ -183,6 +255,7 @@ def start_process():
         thread_id = request.form.get("thread_id", "").strip()
         time_delay = int(request.form.get("time_delay", 20))
         sender_name = request.form.get("sender_name", "").strip()
+        run_mode = request.form.get("run_mode", "sequential").strip()
         file = request.files.get("message_file")
 
         if not cookies or not thread_id or not file or not sender_name:
@@ -214,12 +287,12 @@ def start_process():
         stop_flag = False
         thread = threading.Thread(
             target=worker_thread,
-            args=(cookies, thread_id, time_delay, sender_name, messages)
+            args=(cookies, thread_id, time_delay, sender_name, messages, run_mode)
         )
         thread.daemon = True
         thread.start()
 
-        return jsonify({"status": "success", "message": "Started successfully"})
+        return jsonify({"status": "success", "message": f"Started successfully in {run_mode} mode!"})
         
     except Exception as e:
         with state_lock:
