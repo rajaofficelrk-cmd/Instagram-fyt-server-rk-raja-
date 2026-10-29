@@ -5,76 +5,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>💀 Insta Bulk Sender - 24/7</title>
     <style>
-        :root { 
-            --bg: #050505; 
-            --card: rgba(20, 20, 20, 0.75); 
-            --border: rgba(255, 255, 255, 0.1); 
-            --text: #e0e0e0; 
-            --accent: #ff0033; 
-            --neon-blue: #00f3ff;
-            --green: #00cc66; 
-            --red: #ff3333; 
-        }
+        :root { --bg: #050505; --card: rgba(20, 20, 20, 0.75); --border: rgba(255, 255, 255, 0.1); --text: #e0e0e0; --accent: #ff0033; --neon-blue: #00f3ff; --green: #00cc66; --red: #ff3333; }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Courier New', monospace; }
         
-        /* ✅ UNIQUE NEON BACKGROUND WITH PHOTO */
         body { 
             background-color: var(--bg);
-            background-image: 
-                linear-gradient(rgba(5, 5, 5, 0.85), rgba(5, 5, 5, 0.95)),
-                url('https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png');
-            background-size: cover;
-            background-position: center;
-            background-attachment: fixed;
-            color: var(--text); 
-            display: flex; 
-            justify-content: center; 
-            padding: 20px; 
-            min-height: 100vh; 
+            background-image: linear-gradient(rgba(5, 5, 5, 0.85), rgba(5, 5, 5, 0.95)), url('https://i.ibb.co/KjtjBDRP/file-00000000f49c821197fdc7fcda40847d.png');
+            background-size: cover; background-position: center; background-attachment: fixed; color: var(--text); 
+            display: flex; justify-content: center; padding: 20px; min-height: 100vh; 
         }
 
-        /* ✅ GLASSMORPHISM CONTAINER */
-        .container { 
-            background: var(--card); 
-            backdrop-filter: blur(16px); 
-            -webkit-backdrop-filter: blur(16px); 
-            border: 1px solid var(--border); 
-            border-radius: 20px; 
-            padding: 30px; 
-            width: 100%; 
-            max-width: 800px; 
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.7), 0 0 20px rgba(0, 243, 255, 0.1); 
-        }
+        .container { background: var(--card); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--border); border-radius: 20px; padding: 30px; width: 100%; max-width: 800px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.7), 0 0 20px rgba(0, 243, 255, 0.1); }
         
-        /* ✅ HEADER PHOTO */
         .header-area { text-align: center; margin-bottom: 30px; display: flex; flex-direction: column; align-items: center;}
-        .header-area img { 
-            width: 130px; 
-            height: 130px; 
-            object-fit: cover; 
-            border-radius: 50%; 
-            margin-bottom: 15px; 
-            border: 3px solid var(--neon-blue); 
-            box-shadow: 0 0 25px rgba(0, 243, 255, 0.5); 
-        }
+        .header-area img { width: 130px; height: 130px; object-fit: cover; border-radius: 50%; margin-bottom: 15px; border: 3px solid var(--neon-blue); box-shadow: 0 0 25px rgba(0, 243, 255, 0.5); }
         .header-area p { color: #fff; font-weight: bold; font-size: 1.2em; letter-spacing: 3px; text-transform: uppercase; text-shadow: 0 0 10px var(--neon-blue); }
         
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
         .full-width { grid-column: span 2; }
         label { display: block; margin-bottom: 8px; color: #bbb; font-size: 0.9em; font-weight: bold; }
         
-        textarea, input { 
-            width: 100%; 
-            padding: 14px; 
-            background: rgba(0,0,0,0.6); 
-            border: 1px solid var(--border); 
-            border-radius: 8px; 
-            color: #fff; 
-            font-size: 14px; 
-            transition: 0.3s;
-        }
-        textarea:focus, input:focus { outline: none; border-color: var(--neon-blue); box-shadow: 0 0 10px rgba(0, 243, 255, 0.3); }
+        textarea, input[type="text"], input[type="number"], select { width: 100%; padding: 14px; background: rgba(0,0,0,0.6); border: 1px solid var(--border); border-radius: 8px; color: #fff; font-size: 14px; transition: 0.3s; }
+        textarea:focus, input[type="text"]:focus, input[type="number"]:focus, select:focus { outline: none; border-color: var(--neon-blue); box-shadow: 0 0 10px rgba(0, 243, 255, 0.3); }
         
+        /* File Upload Styling */
+        .file-upload-btn { background: #333; color: #fff; border: 1px dashed #555; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; margin-bottom: 10px; display: inline-block; transition: 0.3s; }
+        .file-upload-btn:hover { background: #444; border-color: var(--neon-blue); }
+
         .btn-group { display: flex; gap: 15px; margin-top: 25px; }
         button { flex: 1; padding: 16px; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; transition: 0.3s; }
         #startBtn { background: var(--green); color: #000; box-shadow: 0 0 15px rgba(0, 204, 102, 0.4); }
@@ -101,8 +58,22 @@
         <form id="senderForm">
             <div class="grid">
                 <div class="full-width">
-                    <label>🍪 Instagram Cookies (sessionid=...)</label>
-                    <textarea id="cookies" name="cookies" rows="3" placeholder="sessionid=...; ds_user_id=...; csrftoken=...;" required></textarea>
+                    <label>🍪 Instagram Cookies (Paste karein ya File Upload karein)</label>
+                    <div>
+                        <label for="cookie_file" class="file-upload-btn">📁 Upload Cookies File (.txt)</label>
+                        <input type="file" id="cookie_file" accept=".txt" onchange="loadCookieFile(event)" style="display: none;">
+                    </div>
+                    <!-- Har line me ek ID ki cookies -->
+                    <textarea id="cookies" name="cookies" rows="6" placeholder="sessionid=...; ds_user_id=...; csrftoken=...&#10;sessionid=...; ds_user_id=...; csrftoken=..." required></textarea>
+                </div>
+
+                <!-- ✅ NAYA: EXECUTION MODE -->
+                <div class="full-width">
+                    <label>⚙️ Execution Mode (Kaise chalana hai?)</label>
+                    <select id="run_mode" name="run_mode" required>
+                        <option value="parallel">Ek Sath (Parallel) - Saari IDs ek saath messages bhejengi</option>
+                        <option value="sequential">Ek Ke Baad Ek (Sequential) - Ek ID poori file bhejegi, fir dusri</option>
+                    </select>
                 </div>
                 
                 <div>
@@ -152,6 +123,16 @@
         const form = document.getElementById('senderForm');
         let pollingInterval = null;
 
+        function loadCookieFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('cookies').value = e.target.result;
+            };
+            reader.readAsText(file);
+        }
+
         function printLog(msg, type = 'normal') {
             const div = document.createElement('div');
             if (type === 'error' || msg.includes('❌') || msg.includes('🛑') || msg.includes('Error')) {
@@ -189,7 +170,7 @@
             const formData = new FormData(form);
             terminal.innerHTML = '';
             startBtn.disabled = true;
-            printLog("> 🚀 Starting 24/7 server...", 'normal');
+            printLog("> 🚀 Starting server...", 'normal');
 
             try {
                 const res = await fetch('/api/start', { method: 'POST', body: formData });
