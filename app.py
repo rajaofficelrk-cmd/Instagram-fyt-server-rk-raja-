@@ -1,317 +1,275 @@
 import os
+import re
 import time
 import threading
+import requests
 from flask import Flask, render_template, request, jsonify
 from instagrapi import Client
-from instagrapi.exceptions import LoginRequired, ClientError
-import requests
-import re
+from instagrapi.exceptions import (
+    LoginRequired, PleaseWaitFewMinutes, ChallengeRequired,
+    RateLimitError, ClientError
+)
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-server_state = {
+# ---------------- GLOBAL STATE ----------------
+state = {
     "isRunning": False,
     "totalSent": 0,
     "totalFailed": 0,
-    "logs": []
+    "logs": [],
+    "stop_flag": False,
 }
+lock = threading.Lock()
 
-state_lock = threading.RLock()
-stop_flag = False
 
-# ==========================================
-# ⏰ KEEP-ALIVE SYSTEM (Render Sleep Fix)
-# ==========================================
-def keep_alive():
-    url = os.environ.get('RENDER_EXTERNAL_URL')
-    if not url:
-        print("[Keep-Alive] Local environment detected. Skipping.")
-        return
-    
-    ping_url = f"{url}/ping"
-    print(f"[Keep-Alive] Started. Pinging {ping_url} every 5 minutes.")
-    
-    while True:
-        try:
-            requests.get(ping_url, timeout=10)
-        except Exception:
-            pass
-        time.sleep(300)
+def log(msg):
+    ts = time.strftime("%H:%M:%S")
+    line = f"[{ts}] > {msg}"
+    with lock:
+        state["logs"].append(line)
+        if len(state["logs"]) > 500:
+            state["logs"] = state["logs"][-500:]
+    print(line)
 
-threading.Thread(target=keep_alive, daemon=True).start()
 
-# ==========================================
-# 🛠️ HELPER FUNCTIONS
-# ==========================================
-def add_log(message):
-    timestamp = time.strftime("%H:%M:%S")
-    log_msg = f"[{timestamp}] > {message}"
-    with state_lock:
-        server_state["logs"].append(log_msg)
-        if len(server_state["logs"]) > 150:
-            server_state["logs"].pop(0)
-    print(log_msg)
+# ---------------- COOKIE PARSER ----------------
+def parse_cookie(cookie_str):
+    cookie = {}
+    for part in cookie_str.strip().split(';'):
+        if '=' in part:
+            k, v = part.split('=', 1)
+            cookie[k.strip()] = v.strip()
+    return cookie
 
-def extract_cookie_value(cookies_str, key):
-    match = re.search(rf'{key}=([^;]+)', cookies_str)
-    return match.group(1).strip() if match else None
 
-def send_insta_message(cl, thread_id, text):
+# ---------------- CLIENT BUILDER ----------------
+def make_client(cookie_str):
+    cookie = parse_cookie(cookie_str)
+    cl = Client()
+
+    # ⭐ CRITICAL: timeout + delay (hang fix)
+    cl.request_timeout = 30
+    cl.delay_range = [1, 2]
+
+    cl.set_settings({
+        "cookies": cookie,
+        "user_agent": "Instagram 219.0.0.12.117 Android",
+    })
+    return cl
+
+
+# ---------------- LOGIN VALIDATOR (NEVER HANGS) ----------------
+def login_and_validate(cl, cookie_str):
+    """Return (ok: bool, reason: str). Never loops, never hangs."""
+    cookie = parse_cookie(cookie_str)
+    sessionid = cookie.get("sessionid")
+
+    if not sessionid:
+        return False, "sessionid missing in cookies"
+
     try:
-        cl.direct_send(text=text, thread_ids=[thread_id])
-        return True, "Success"
+        ok = cl.login_by_sessionid(sessionid)
+        if not ok:
+            return False, "Invalid sessionid"
+        return True, "ok"
+
+    except ChallengeRequired:
+        return False, "CHALLENGE REQUIRED — manual login needed"
+
+    except PleaseWaitFewMinutes:
+        return False, "RATE LIMITED — wait 5-10 min"
+
+    except RateLimitError:
+        return False, "RATE LIMIT — too many requests"
+
     except LoginRequired:
         return False, "COOKIES EXPIRED"
+
     except ClientError as e:
-        err_msg = str(e)
-        if "404" in err_msg:
-            return False, "HTTP Error 404"
-        elif "429" in err_msg:
-            return False, "RATE LIMIT"
-        return False, f"API Error: {err_msg}"
+        return False, f"CLIENT ERROR: {str(e)[:100]}"
+
+    except requests.exceptions.Timeout:
+        return False, "TIMEOUT — IP blocked by Instagram or slow network"
+
     except Exception as e:
-        return False, f"Connection Error: {str(e)}"
+        return False, f"UNKNOWN: {str(e)[:100]}"
 
-# ==========================================
-# ⚙️ WORKER THREADS (Sequential & Parallel)
-# ==========================================
 
-def run_sequential(cookie_lines, thread_id, time_delay, sender_name, messages):
-    """Ek ID poori file bhejegi, fir dusri ID shuru hogi."""
-    add_log("🚀 Starting SEQUENTIAL Mode (Ek ke baad ek)...")
-    loop_count = 1
-    
-    while not stop_flag:
-        add_log(f"🔄 Starting Round #{loop_count}")
-        
-        for i, cookies in enumerate(cookie_lines):
-            if stop_flag: break
-            acc_num = i + 1
-            sessionid = extract_cookie_value(cookies, "sessionid")
-            if not sessionid:
-                add_log(f"⚠️ [ID {acc_num}] Session ID missing. Skip.")
-                continue
+# ---------------- MESSAGE SENDER ----------------
+def send_messages_from_client(cookie_line, thread_id, messages, delay, sender_name, idx):
+    try:
+        cl = make_client(cookie_line)
 
-            cl = Client()
+        log(f"🔐 [ID {idx}] Logging in..")
+        ok, reason = login_and_validate(cl, cookie_line)
+
+        if not ok:
+            log(f"❌ [ID {idx}] Login failed: {reason}")
+            with lock:
+                state["totalFailed"] += 1
+            return   # ⭐ exit, no infinite retry
+
+        log(f"✅ [ID {idx}] Logged in as user_id={cl.user_id}")
+
+        for i, msg in enumerate(messages, 1):
+            if state["stop_flag"]:
+                log(f"🛑 [ID {idx}] Stop flag received. Exiting.")
+                return
+
             try:
-                add_log(f"🔐 [ID {acc_num}] Logging in...")
-                cl.login_by_sessionid(sessionid)
-                add_log(f"✅ [ID {acc_num}] Login Successful (UID: {cl.user_id})")
+                cl.direct_send(msg, thread_ids=[int(thread_id)])
+                with lock:
+                    state["totalSent"] += 1
+                log(f"✅ [ID {idx}] Sent {i}/{len(messages)}: {msg[:40]}")
+
+            except PleaseWaitFewMinutes:
+                log(f"⚠️ [ID {idx}] Rate limited. Sleeping 60s...")
+                time.sleep(60)
+                with lock:
+                    state["totalFailed"] += 1
+
             except Exception as e:
-                add_log(f"❌ [ID {acc_num}] Login Failed: {str(e)}")
-                continue
+                with lock:
+                    state["totalFailed"] += 1
+                log(f"❌ [ID {idx}] Failed {i}/{len(messages)}: {str(e)[:80]}")
 
-            for idx, msg in enumerate(messages):
-                if stop_flag: break
-                clean_msg = msg.strip()
-                if not clean_msg: continue
+            time.sleep(delay)
 
-                full_message = f"{sender_name}\n{clean_msg}"
-                
-                with state_lock:
-                    total_processed = server_state["totalSent"] + server_state["totalFailed"] + 1
-                    
-                add_log(f"[ID {acc_num}] Sending msg [{total_processed}]...")
-                success, err_msg = send_insta_message(cl, thread_id, full_message)
+        log(f"🎉 [ID {idx}] Finished all {len(messages)} messages.")
 
-                if success:
-                    with state_lock: server_state["totalSent"] += 1
-                    add_log(f"✅ [ID {acc_num}] Sent successfully!")
-                else:
-                    with state_lock: server_state["totalFailed"] += 1
-                    add_log(f"❌ [ID {acc_num}] Failed: {err_msg}")
-                    
-                    if "COOKIES EXPIRED" in err_msg or "RATE LIMIT" in err_msg:
-                        add_log(f"⚠️ [ID {acc_num}] Stopping this ID.")
-                        break
-
-                # Delay between messages
-                if not stop_flag:
-                    for _ in range(time_delay):
-                        if stop_flag: break
-                        time.sleep(1)
-            
-            add_log(f"⏳ [ID {acc_num}] Completed file. Moving to next...")
-            time.sleep(3) # Gap between switching IDs
-            
-        loop_count += 1
+    except Exception as e:
+        log(f"❌ [ID {idx}] Thread crashed: {str(e)[:120]}")
+        with lock:
+            state["totalFailed"] += 1
 
 
-def run_parallel(cookie_lines, thread_id, time_delay, sender_name, messages):
-    """Saari IDs ek saath messages bhejengi."""
-    add_log("🚀 Starting PARALLEL Mode (Ek Sath)...")
-    
-    def single_id_worker(cookies, acc_num):
-        sessionid = extract_cookie_value(cookies, "sessionid")
-        if not sessionid: return
-        
-        cl = Client()
-        try:
-            add_log(f"🔐 [ID {acc_num}] Logging in...")
-            cl.login_by_sessionid(sessionid)
-            add_log(f"✅ [ID {acc_num}] Login Successful (UID: {cl.user_id})")
-        except Exception as e:
-            add_log(f"❌ [ID {acc_num}] Login Failed: {str(e)}")
-            return
-
-        loop_count = 1
-        while not stop_flag:
-            add_log(f"🔄 [ID {acc_num}] Round #{loop_count}")
-            for msg in messages:
-                if stop_flag: break
-                clean_msg = msg.strip()
-                if not clean_msg: continue
-
-                full_message = f"{sender_name}\n{clean_msg}"
-                
-                with state_lock:
-                    total_processed = server_state["totalSent"] + server_state["totalFailed"] + 1
-                    
-                add_log(f"[ID {acc_num}] Sending msg [{total_processed}]...")
-                success, err_msg = send_insta_message(cl, thread_id, full_message)
-
-                if success:
-                    with state_lock: server_state["totalSent"] += 1
-                    add_log(f"✅ [ID {acc_num}] Sent successfully!")
-                else:
-                    with state_lock: server_state["totalFailed"] += 1
-                    add_log(f"❌ [ID {acc_num}] Failed: {err_msg}")
-                    
-                    if "COOKIES EXPIRED" in err_msg or "RATE LIMIT" in err_msg:
-                        add_log(f"⚠️ [ID {acc_num}] Stopping this ID.")
-                        return
-
-                if not stop_flag:
-                    for _ in range(time_delay):
-                        if stop_flag: break
-                        time.sleep(1)
-            loop_count += 1
-
+# ---------------- RUNNERS ----------------
+def run_parallel(cookie_lines, thread_id, messages, delay, sender_name):
+    log(f"🚀 Starting PARALLEL Mode (Ek Sath)...")
     threads = []
-    for i, cookies in enumerate(cookie_lines):
-        t = threading.Thread(target=single_id_worker, args=(cookies, i+1))
-        t.daemon = True
+    for idx, line in enumerate(cookie_lines, 1):
+        t = threading.Thread(
+            target=send_messages_from_client,
+            args=(line, thread_id, messages, delay, sender_name, idx),
+            daemon=True,
+        )
         t.start()
         threads.append(t)
-        time.sleep(3) # Gap so all accounts don't login at the exact same millisecond
-        
     for t in threads:
         t.join()
+    finalize()
 
 
-# ==========================================
-# 🧠 MASTER WORKER
-# ==========================================
-def worker_thread(cookies_raw, thread_id, time_delay, sender_name, messages, run_mode):
-    global stop_flag
-    
-    with state_lock:
-        server_state["totalSent"] = 0
-        server_state["totalFailed"] = 0
-        server_state["logs"] = []
-    
-    # Split cookies into lines
-    cookie_lines = [line.strip() for line in cookies_raw.split('\n') if line.strip()]
-    
-    if not cookie_lines:
-        add_log("❌ CRITICAL: Koi valid Cookies nahi mile.")
-        with state_lock: server_state["isRunning"] = False
-        return
+def run_sequential(cookie_lines, thread_id, messages, delay, sender_name):
+    log(f"🚀 Starting SEQUENTIAL Mode (Ek Ke Baad Ek)...")
+    for idx, line in enumerate(cookie_lines, 1):
+        if state["stop_flag"]:
+            break
+        send_messages_from_client(line, thread_id, messages, delay, sender_name, idx)
+    finalize()
 
-    add_log(f"📁 Total {len(cookie_lines)} IDs found. Mode: {run_mode.upper()}")
 
-    if run_mode == 'sequential':
-        run_sequential(cookie_lines, thread_id, time_delay, sender_name, messages)
-    else:
-        run_parallel(cookie_lines, thread_id, time_delay, sender_name, messages)
+def finalize():
+    with lock:
+        state["isRunning"] = False
+        state["stop_flag"] = False
+    log("🎉 Job finished.")
 
-    with state_lock:
-        server_state["isRunning"] = False
-    add_log("🎉 Task stopped by user.")
 
-# ==========================================
-# 🌐 ROUTES
-# ==========================================
+# ---------------- ROUTES ----------------
 @app.route("/")
 def index():
     return render_template("index.html")
 
-@app.route("/ping")
-def ping():
-    return "OK", 200
 
 @app.route("/api/start", methods=["POST"])
-def start_process():
-    global stop_flag
-    
-    with state_lock:
-        if server_state["isRunning"]:
-            return jsonify({"status": "error", "message": "Server is already running!"})
+def start():
+    with lock:
+        if state["isRunning"]:
+            return jsonify({"status": "error", "message": "Already running"}), 400
+        state["isRunning"] = True
+        state["stop_flag"] = False
+        state["totalSent"] = 0
+        state["totalFailed"] = 0
+        state["logs"] = []
 
     try:
-        cookies = request.form.get("cookies", "").strip()
+        cookies_raw = request.form.get("cookies", "").strip()
+        run_mode = request.form.get("run_mode", "parallel")
         thread_id = request.form.get("thread_id", "").strip()
-        time_delay = int(request.form.get("time_delay", 20))
-        sender_name = request.form.get("sender_name", "").strip()
-        run_mode = request.form.get("run_mode", "sequential").strip()
-        file = request.files.get("message_file")
+        delay = int(request.form.get("time_delay", 20))
+        sender_name = request.form.get("sender_name", "Here").strip()
 
-        if not cookies or not thread_id or not file or not sender_name:
-            return jsonify({"status": "error", "message": "All fields are required!"})
+        message_file = request.files.get("message_file")
+        if not message_file:
+            raise ValueError("Message file missing")
 
-        if time_delay < 10:
-            time_delay = 10
-
-        file_bytes = file.read()
-        file_content = ""
-        for encoding in ['utf-8', 'latin-1', 'cp1252', 'utf-16']:
-            try:
-                file_content = file_bytes.decode(encoding)
-                break
-            except UnicodeDecodeError:
-                continue
-        
-        if not file_content:
-            file_content = file_bytes.decode('utf-8', errors='ignore')
-
-        messages = [line.strip() for line in file_content.splitlines() if line.strip()]
-
+        messages = [
+            line.strip()
+            for line in message_file.read().decode("utf-8", errors="ignore").splitlines()
+            if line.strip()
+        ]
         if not messages:
-            return jsonify({"status": "error", "message": "Uploaded text file is empty!"})
+            raise ValueError("Message file is empty")
 
-        with state_lock:
-            server_state["isRunning"] = True
+        cookie_lines = [c.strip() for c in cookies_raw.splitlines() if c.strip()]
+        if not cookie_lines:
+            raise ValueError("No cookies provided")
 
-        stop_flag = False
-        thread = threading.Thread(
-            target=worker_thread,
-            args=(cookies, thread_id, time_delay, sender_name, messages, run_mode)
-        )
-        thread.daemon = True
-        thread.start()
+        if not thread_id.isdigit():
+            raise ValueError("Invalid thread_id (numeric only)")
 
-        return jsonify({"status": "success", "message": f"Started successfully in {run_mode} mode!"})
-        
+        log(f"📁 Total {len(cookie_lines)} IDs found. Mode: {run_mode.upper()}")
+
+        target = run_parallel if run_mode == "parallel" else run_sequential
+        threading.Thread(
+            target=target,
+            args=(cookie_lines, thread_id, messages, delay, sender_name),
+            daemon=True,
+        ).start()
+
+        return jsonify({"status": "success", "message": f"Started in {run_mode} mode"})
+
     except Exception as e:
-        with state_lock:
-            server_state["isRunning"] = False
-        return jsonify({"status": "error", "message": f"Server Error: {str(e)}"})
+        with lock:
+            state["isRunning"] = False
+        log(f"❌ Start error: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 400
+
 
 @app.route("/api/stop", methods=["POST"])
-def stop_process():
-    global stop_flag
-    stop_flag = True
-    with state_lock:
-        server_state["isRunning"] = False
+def stop():
+    with lock:
+        state["stop_flag"] = True
+    log("🛑 Stop requested. Threads will exit after current message.")
     return jsonify({"status": "success", "message": "Stopping..."})
 
-@app.route("/api/status", methods=["GET"])
-def get_status():
-    with state_lock:
-        return jsonify(server_state)
+
+@app.route("/api/status")
+def status():
+    with lock:
+        return jsonify({
+            "isRunning": state["isRunning"],
+            "totalSent": state["totalSent"],
+            "totalFailed": state["totalFailed"],
+            "logs": state["logs"][-100:],
+        })
+
+
+# ---------------- KEEP ALIVE (Render) ----------------
+def keep_alive():
+    url = os.environ.get("RENDER_EXTERNAL_URL")
+    if not url:
+        return
+    while True:
+        try:
+            requests.get(url, timeout=10)
+        except Exception:
+            pass
+        time.sleep(300)
+
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    threading.Thread(target=keep_alive, daemon=True).start()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
