@@ -3,6 +3,7 @@ import re
 import time
 import threading
 import requests
+import gc
 from flask import Flask, render_template, request, jsonify
 from instagrapi import Client
 from instagrapi.exceptions import (
@@ -101,6 +102,7 @@ def login_and_validate(cl, cookie_str):
 
 # ---------------- MESSAGE SENDER ----------------
 def send_messages_from_client(cookie_line, thread_id, messages, delay, sender_name, idx):
+    cl = None
     try:
         cl = make_client(cookie_line)
         log(f"🔐 [ID {idx}] Logging in..")
@@ -114,23 +116,24 @@ def send_messages_from_client(cookie_line, thread_id, messages, delay, sender_na
 
         log(f"✅ [ID {idx}] Logged in! Sending messages...")
 
-        if sender_name and sender_name.strip() != "":
-            try:
-                cl.direct_send(sender_name, thread_ids=[int(thread_id)])
-                log(f"🏷️ [ID {idx}] Sent Here Name: {sender_name}")
-                time.sleep(2)
-            except Exception as e:
-                log(f"⚠️ [ID {idx}] Could not send Here Name: {str(e)[:50]}")
-
+        # ⭐ YAHAN CHANGE HUA HAI: Ab Here Name alag se nahi jayega, sath me jayega
         for i, msg in enumerate(messages, 1):
             if state["stop_flag"]:
                 log(f"🛑 [ID {idx}] Stop flag received. Exiting.")
                 return
+            
+            # Here Name aur File ka message jod diya
+            if sender_name and sender_name.strip() != "":
+                final_msg = f"{sender_name} {msg}"
+            else:
+                final_msg = msg
+
             try:
-                cl.direct_send(msg, thread_ids=[int(thread_id)])
+                cl.direct_send(final_msg, thread_ids=[int(thread_id)])
                 with lock:
                     state["totalSent"] += 1
-                log(f"✅ [ID {idx}] Sent {i}/{len(messages)}: {msg[:30]}...")
+                log(f"✅ [ID {idx}] Sent {i}/{len(messages)}: {final_msg[:40]}...")
+                
             except PleaseWaitFewMinutes:
                 log(f"⚠️ [ID {idx}] Rate limited. Sleeping 60s...")
                 time.sleep(60)
@@ -149,10 +152,15 @@ def send_messages_from_client(cookie_line, thread_id, messages, delay, sender_na
         log(f"❌ [ID {idx}] Thread crashed: {str(e)[:120]}")
         with lock:
             state["totalFailed"] += 1
+    finally:
+        if cl:
+            del cl
+        gc.collect()
+        log(f"🧹 [ID {idx}] Memory cleaned.")
 
 # ---------------- RUNNERS ----------------
 def run_parallel(cookie_lines, thread_id, messages, delay, sender_name):
-    log(f"🚀 Starting PARALLEL Mode (Ek Sath)...")
+    log(f"🚀 Starting PARALLEL Mode...")
     threads = []
     for idx, line in enumerate(cookie_lines, 1):
         t = threading.Thread(target=send_messages_from_client, args=(line, thread_id, messages, delay, sender_name, idx), daemon=True)
@@ -178,6 +186,10 @@ def finalize():
 @app.route("/")
 def index():
     return render_template("index.html")
+
+@app.route("/health")
+def health():
+    return "OK", 200
 
 @app.route("/api/start", methods=["POST"])
 def start():
@@ -210,9 +222,9 @@ def start():
             raise ValueError("Koi valid 'sessionid' nahi mila!")
 
         if not thread_id.isdigit():
-            raise ValueError("Invalid thread_id (sirf numbers daalo)")
+            raise ValueError("Invalid thread_id")
 
-        log(f"📁 Total {len(cookie_lines)} valid IDs found. Mode: {run_mode.upper()}")
+        log(f"📁 Total {len(cookie_lines)} IDs found. Mode: {run_mode.upper()}")
 
         target = run_parallel if run_mode == "parallel" else run_sequential
         threading.Thread(target=target, args=(cookie_lines, thread_id, messages, delay, sender_name), daemon=True).start()
@@ -242,26 +254,23 @@ def status():
             "logs": state["logs"][-100:],
         })
 
-# ---------------- STRONG KEEP ALIVE ----------------
+# ---------------- UPTIME / KEEP ALIVE ----------------
 def keep_alive():
-    # Render apna URL khud deta hai, par fallback ke liye manual URL bhi check karega
-    url = os.environ.get("RENDER_EXTERNAL_URL", "https://r-rk-raja-2uey.onrender.com")
-    
-    # URL ko theek karna (agar http:// laga ho toh https:// karna)
-    if url.startswith("http://"):
-        url = url.replace("http://", "https://")
-    
+    url = os.environ.get("RENDER_EXTERNAL_URL")
+    if not url:
+        log("⚠️ RENDER_EXTERNAL_URL nahi mila. Keep alive fail ho sakta hai.")
+        return
+        
+    url = url.replace("http://", "https://") + "/health"
     log(f"♻️ Keep-Alive started for: {url}")
     
     while True:
         try:
-            # Khud ko ping karega taaki Render soye na
             requests.get(url, timeout=15)
         except Exception:
             pass
-        time.sleep(240) # Har 4 minute mein ping karega (15 min timeout se pehle)
+        time.sleep(300) # 5 minutes
 
 if __name__ == "__main__":
-    # Keep alive thread start karo
     threading.Thread(target=keep_alive, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
