@@ -5,6 +5,7 @@ import threading
 import requests
 import gc
 import random
+import traceback
 from flask import Flask, render_template, request, jsonify
 from instagrapi import Client
 from instagrapi.exceptions import (
@@ -24,13 +25,15 @@ state = {
     "totalFailed": 0,
     "logs": [],
     "stop_flag": False,
+    "start_time": 0,
+    "active_accounts": {} # Admin Dashboard ke liye live tracking
 }
-lock = threading.Lock()
+state_lock = threading.Lock()
 
 def log(msg):
     ts = time.strftime("%H:%M:%S")
     line = f"[{ts}] > {msg}"
-    with lock:
+    with state_lock:
         state["logs"].append(line)
         if len(state["logs"]) > 500:
             state["logs"] = state["logs"][-500:]
@@ -50,8 +53,7 @@ def parse_cookies_smart(raw_text):
     ds_user_ids = unique(ds_user_ids)
     csrf_tokens = unique(csrf_tokens)
 
-    if not session_ids:
-        return []
+    if not session_ids: return []
 
     accounts = []
     for i in range(len(session_ids)):
@@ -63,15 +65,22 @@ def parse_cookies_smart(raw_text):
         if duid: c_str += f"; ds_user_id={duid}"
         if csrf: c_str += f"; csrftoken={csrf}"
         accounts.append(c_str)
-    
     return accounts
 
-# ---------------- ROBUST CLIENT BUILDER ----------------
+# ---------------- SPINTAX PARSER ----------------
+def parse_spintax(text):
+    def replace(match):
+        options = match.group(1).split('|')
+        return random.choice(options)
+    for _ in range(3):
+        text = re.sub(r'\{([^{}]+)\}', replace, text)
+    return text
+
+# ---------------- CLIENT BUILDER ----------------
 def make_client(cookie_str):
     cl = Client()
-    cl.request_timeout = 20  # ⭐ Timeout 20s kar diya taaki login pe atke nahi
-    cl.delay_range = [5, 15] 
-    
+    cl.request_timeout = 30
+    cl.delay_range = [3, 8] 
     cl.set_settings({
         "user_agent": "Instagram 269.0.0.18.75 Android (32/12; 480dpi; 1080x2400; samsung; SM-G991B; o1s; exynos2100; en_US; 458226540)",
         "locale": "en_US",
@@ -79,69 +88,72 @@ def make_client(cookie_str):
     })
     return cl
 
-# ---------------- ADVANCED LOGIN VALIDATOR ----------------
+# ---------------- LOGIN VALIDATOR ----------------
 def login_and_validate(cl, cookie_str):
     match = re.search(r'sessionid=([^;]+)', cookie_str)
-    if not match:
-        return False, "Session ID missing"
+    if not match: return False, "Session ID missing"
     
     sessionid = match.group(1)
     try:
         ok = cl.login_by_sessionid(sessionid)
-        if not ok:
-            return False, "Invalid Session ID"
+        if not ok: return False, "Invalid Session ID"
         return True, "OK"
+    except ChallengeRequired: return False, "CHALLENGE REQUIRED"
+    except PleaseWaitFewMinutes: return False, "RATE LIMITED"
+    except RateLimitError: return False, "RATE LIMIT"
+    except LoginRequired: return False, "COOKIES EXPIRED"
+    except Exception as e: return False, str(e)[:50]
 
-    except ChallengeRequired:
-        return False, "CHALLENGE REQUIRED"
-    except PleaseWaitFewMinutes:
-        return False, "RATE LIMITED"
-    except RateLimitError:
-        return False, "RATE LIMIT"
-    except LoginRequired:
-        return False, "COOKIES EXPIRED"
-    except requests.exceptions.Timeout:
-        return False, "TIMEOUT — IP Blocked"
-    except Exception as e:
-        return False, f"ERROR: {str(e)[:100]}"
-
-# ---------------- BULLETPROOF MESSAGE SENDER ----------------
-def send_messages_from_client(cookie_line, thread_id, messages, delay, sender_name, idx):
+# ---------------- MESSAGE SENDER WORKER ----------------
+def send_messages_worker(cookie_line, thread_id, messages, delay, sender_name, idx):
     cl = None
+    acc_key = f"ID_{idx}"
+    
+    with state_lock:
+        state["active_accounts"][acc_key] = {"name": f"ID {idx}", "uid": "Loading...", "status": "Logging in...", "sent": 0, "failed": 0}
+
     try:
         cl = make_client(cookie_line)
+        if state["stop_flag"]: return
         
-        if state["stop_flag"]: return # Stop check before login
-        
-        log(f"🔐 [ID {idx}] Logging in..")
         ok, reason = login_and_validate(cl, cookie_line)
         
         if not ok:
-            log(f"❌ [ID {idx}] Login failed: {reason}")
-            with lock: state["totalFailed"] += 1
+            log(f"[ID {idx}] ❌ Login failed: {reason}")
+            with state_lock:
+                state["totalFailed"] += 1
+                state["active_accounts"][acc_key]["status"] = f"Failed: {reason}"
+                state["active_accounts"][acc_key]["failed"] += 1
             return
 
-        log(f"✅ [ID {idx}] Logged in as @{cl.username}")
+        # Update Admin Dashboard
+        with state_lock:
+            state["active_accounts"][acc_key]["name"] = f"@{cl.username}"
+            state["active_accounts"][acc_key]["uid"] = cl.user_id
+            state["active_accounts"][acc_key]["status"] = "Active (Sending)"
 
-        for i, msg in enumerate(messages, 1):
+        log(f"[ID {idx}] ✅ Logged in as @{cl.username}")
+
+        for i, raw_msg in enumerate(messages, 1):
             if state["stop_flag"]:
-                log(f"🛑 [ID {idx}] Stop flag received. Exiting.")
-                return
+                with state_lock: state["active_accounts"][acc_key]["status"] = "Stopped"
+                break
             
-            final_msg = f"{sender_name} {msg}" if (sender_name and sender_name.strip()) else msg
+            final_msg = f"{sender_name} {parse_spintax(raw_msg)}" if (sender_name and sender_name.strip()) else parse_spintax(raw_msg)
             
             # Typing Simulation
-            typing_time = min(len(final_msg) * 0.05, 10.0) 
-            log(f"⌨️ [ID {idx}] Typing for {typing_time:.1f}s...")
-            time.sleep(typing_time) 
+            typing_time = min(len(final_msg) * 0.06, 12.0) 
+            with state_lock: state["active_accounts"][acc_key]["status"] = f"Typing ({typing_time:.1f}s)..."
+            for _ in range(int(typing_time)):
+                if state["stop_flag"]: break
+                time.sleep(1)
+                
+            if state["stop_flag"]: break
 
-            if state["stop_flag"]: return # Stop check before send
-
-            max_retries = 3
             success = False
-            
-            for attempt in range(max_retries):
+            for attempt in range(3):
                 try:
+                    with state_lock: state["active_accounts"][acc_key]["status"] = f"Sending msg {i}..."
                     try:
                         cl.direct_send(final_msg, thread_ids=[int(thread_id)])
                     except Exception as e:
@@ -150,49 +162,48 @@ def send_messages_from_client(cookie_line, thread_id, messages, delay, sender_na
                         else: raise e 
                     success = True
                     break 
+                    
+                except ClientError as e:
+                    if "We're sorry" in str(e) or "something went wrong" in str(e):
+                        log(f"[ID {idx}] 🚨 Instagram Block: 'We're sorry' error. Stopping this account.")
+                        with state_lock: state["active_accounts"][acc_key]["status"] = "Blocked by IG"
+                        break # Break retry loop, move to next account
+                    else:
+                        time.sleep(15)
 
-                except (ClientForbiddenError, ClientThrottledError, PleaseWaitFewMinutes, RateLimitError) as e:
-                    wait_time = (attempt + 1) * random.randint(15, 25) 
-                    log(f"⚠️ [ID {idx}] Blocked. Waiting {wait_time}s... ({attempt+1}/{max_retries})")
-                    time.sleep(wait_time)
-                except ClientLoginRequired:
-                    log(f"🔄 [ID {idx}] Session dropped. Re-logging...")
-                    ok, _ = login_and_validate(cl, cookie_line)
-                    if not ok: break
                 except Exception as e:
-                    log(f"❌ [ID {idx}] Attempt {attempt+1} error: {str(e)[:60]}")
                     time.sleep(10) 
 
             if success:
-                with lock: state["totalSent"] += 1
-                log(f"✅ [ID {idx}] Sent {i}/{len(messages)}: {final_msg[:30]}...")
+                with state_lock:
+                    state["totalSent"] += 1
+                    state["active_accounts"][acc_key]["sent"] += 1
+                    state["active_accounts"][acc_key]["status"] = f"Waiting {delay}s..."
+                log(f"[ID {idx}] ✅ Sent {i}/{len(messages)}: {final_msg[:30]}...")
             else:
-                with lock: state["totalFailed"] += 1
-                log(f"❌ [ID {idx}] Failed {i}/{len(messages)}.")
-                if i == 1: break # Agar pehla hi fail ho toh account rok do
-            
-            # Delay between messages
+                with state_lock:
+                    state["totalFailed"] += 1
+                    state["active_accounts"][acc_key]["failed"] += 1
+                    if state["active_accounts"][acc_key]["status"] != "Blocked by IG":
+                        state["active_accounts"][acc_key]["status"] = "Message Failed"
+                
             for _ in range(delay):
                 if state["stop_flag"]: break
                 time.sleep(1)
 
-        log(f"🎉 [ID {idx}] Task completed.")
+        with state_lock: state["active_accounts"][acc_key]["status"] = "Completed"
 
     except Exception as e:
-        log(f"❌ [ID {idx}] Crashed: {str(e)[:100]}")
-        with lock: state["totalFailed"] += 1
+        with state_lock: state["active_accounts"][acc_key]["status"] = "Crashed"
     finally:
         if cl: del cl
         gc.collect()
-        log(f"🧹 [ID {idx}] Memory freed.")
 
-# ---------------- RUNNERS ----------------
 def run_parallel(cookie_lines, thread_id, messages, delay, sender_name):
-    log(f"🚀 Starting PARALLEL Mode (Multiple IDs at once)...")
     threads = []
     for idx, line in enumerate(cookie_lines, 1):
         if state["stop_flag"]: break
-        t = threading.Thread(target=send_messages_from_client, args=(line, thread_id, messages, delay, sender_name, idx), daemon=True)
+        t = threading.Thread(target=send_messages_worker, args=(line, thread_id, messages, delay, sender_name, idx), daemon=True)
         t.start()
         threads.append(t)
         time.sleep(2) 
@@ -200,14 +211,13 @@ def run_parallel(cookie_lines, thread_id, messages, delay, sender_name):
     finalize()
 
 def run_sequential(cookie_lines, thread_id, messages, delay, sender_name):
-    log(f"🚀 Starting SEQUENTIAL Mode (One by One)...")
     for idx, line in enumerate(cookie_lines, 1):
         if state["stop_flag"]: break
-        send_messages_from_client(line, thread_id, messages, delay, sender_name, idx)
+        send_messages_worker(line, thread_id, messages, delay, sender_name, idx)
     finalize()
 
 def finalize():
-    with lock:
+    with state_lock:
         state["isRunning"] = False
         state["stop_flag"] = False
     log("🎉 All jobs finished.")
@@ -217,64 +227,66 @@ def finalize():
 def index():
     return render_template("index.html")
 
+@app.route("/admin")
+def admin():
+    # Admin Login Check
+    auth = request.authorization
+    if not auth or auth.username != "rkraja70" or auth.password != "pra.chi_sgarma200":
+        return "Access Denied. Please provide correct Username and Password.", 401, {'WWW-Authenticate': 'Basic realm="Admin Login"'}
+    return render_template("admin.html")
+
+@app.route("/api/admin_status")
+def admin_status():
+    with state_lock:
+        return jsonify({
+            "isRunning": state["isRunning"],
+            "active_accounts": state["active_accounts"],
+            "logs": state["logs"][-50:]
+        })
+
 @app.route("/health")
-def health():
-    return jsonify({"status": "healthy"}), 200
+def health(): return jsonify({"status": "ok"}), 200
 
 @app.route("/api/start", methods=["POST"])
 def start():
-    with lock:
-        if state["isRunning"]:
-            return jsonify({"status": "error", "message": "Task already running!"}), 400
-        # Reset state for new run
+    with state_lock:
+        if state["isRunning"]: return jsonify({"status": "error", "message": "Already running!"}), 400
         state["isRunning"] = True
         state["stop_flag"] = False
         state["totalSent"] = 0
         state["totalFailed"] = 0
         state["logs"] = []
+        state["active_accounts"] = {}
 
     try:
         cookies_raw = request.form.get("cookies", "").strip()
-        run_mode = request.form.get("run_mode", "parallel") # Default parallel
+        run_mode = request.form.get("run_mode", "parallel")
         thread_id = request.form.get("thread_id", "").strip()
-        delay = int(request.form.get("time_delay", 20)) 
+        delay = int(request.form.get("time_delay", 30)) 
         sender_name = request.form.get("sender_name", "").strip()
 
         message_file = request.files.get("message_file")
-        if not message_file: raise ValueError("Message file missing")
-
         messages = [line.strip() for line in message_file.read().decode("utf-8", errors="ignore").splitlines() if line.strip()]
-        if not messages: raise ValueError("Message file is empty")
-
         cookie_lines = parse_cookies_smart(cookies_raw)
-        if not cookie_lines: raise ValueError("No valid 'sessionid' found!")
-
-        if not thread_id.isdigit(): raise ValueError("Invalid Thread ID. Only numbers allowed.")
-
-        log(f"📁 Found {len(cookie_lines)} ID(s). Mode: {run_mode.upper()}")
 
         target = run_parallel if run_mode == "parallel" else run_sequential
         threading.Thread(target=target, args=(cookie_lines, thread_id, messages, delay, sender_name), daemon=True).start()
 
-        return jsonify({"status": "success", "message": f"Started with {len(cookie_lines)} IDs"})
-
+        return jsonify({"status": "success", "message": "Started"})
     except Exception as e:
-        with lock: state["isRunning"] = False
-        log(f"❌ Start Error: {str(e)}")
+        with state_lock: state["isRunning"] = False
         return jsonify({"status": "error", "message": str(e)}), 400
 
 @app.route("/api/stop", methods=["POST"])
 def stop():
-    with lock:
+    with state_lock:
         state["stop_flag"] = True
-        state["isRunning"] = False # ⭐ YAHAN FIX HUA HAI: Turant UI unlock karega
-        
-    log("🛑 Force stop triggered! Background threads will die shortly.")
-    return jsonify({"status": "success", "message": "Stopped immediately."})
+        state["isRunning"] = False
+    return jsonify({"status": "success", "message": "Stopping..."})
 
 @app.route("/api/status")
 def status():
-    with lock:
+    with state_lock:
         return jsonify({
             "isRunning": state["isRunning"],
             "totalSent": state["totalSent"],
@@ -282,15 +294,14 @@ def status():
             "logs": state["logs"][-150:], 
         })
 
-# ---------------- RENDER KEEP ALIVE ----------------
 def keep_alive():
     url = os.environ.get("RENDER_EXTERNAL_URL")
-    if not url: return
-    url = url.replace("http://", "https://") + "/health"
-    while True:
-        try: requests.get(url, timeout=15)
-        except Exception: pass 
-        time.sleep(240) 
+    if url:
+        url = url.replace("http://", "https://") + "/health"
+        while True:
+            try: requests.get(url, timeout=15)
+            except: pass 
+            time.sleep(240) 
 
 if __name__ == "__main__":
     threading.Thread(target=keep_alive, daemon=True).start()
