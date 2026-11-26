@@ -11,11 +11,11 @@ from instagrapi.exceptions import (
     LoginRequired, PleaseWaitFewMinutes, ChallengeRequired,
     RateLimitError, ClientError, ClientForbiddenError, 
     ClientThrottledError, ClientLoginRequired, UserNotFound,
-    MediaNotFound, DirectMessageError
+    MediaNotFound
 )
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Max 16MB file upload
 
 # ---------------- GLOBAL STATE ----------------
 state = {
@@ -69,14 +69,21 @@ def parse_cookies_smart(raw_text):
 # ---------------- ROBUST CLIENT BUILDER ----------------
 def make_client(cookie_str):
     cl = Client()
-    cl.request_timeout = 60
-    cl.delay_range = [5, 15] # Random API delays
+    cl.request_timeout = 60  # Timeout badha diya taaki slow network pe fail na ho
+    
+    # ⭐ ANTI-BAN: Random delays (Instagram ko human lagne ke liye)
+    cl.delay_range = [5, 15] 
     
     cl.set_settings({
         "user_agent": "Instagram 269.0.0.18.75 Android (32/12; 480dpi; 1080x2400; samsung; SM-G991B; o1s; exynos2100; en_US; 458226540)",
         "locale": "en_US",
-        "timezone_offset": 19800,
+        "timezone_offset": 19800, # India timezone
     })
+    
+    # ⭐ AGAR PROXY USE KARNA HO TOH YAHAN ADD KARO (Uncomment and edit)
+    # proxy_url = os.environ.get("PROXY_URL") 
+    # if proxy_url: cl.set_proxy(proxy_url)
+    
     return cl
 
 # ---------------- ADVANCED LOGIN VALIDATOR ----------------
@@ -87,31 +94,33 @@ def login_and_validate(cl, cookie_str):
     
     sessionid = match.group(1)
     try:
+        # Login attempt
         ok = cl.login_by_sessionid(sessionid)
         if not ok:
             return False, "Invalid Session ID"
             
+        # Check if account is actually active
         try:
             user_info = cl.account_info()
             if not user_info:
                 return False, "Account info could not be fetched"
         except Exception:
-            pass 
+            pass # Account info fail ho bhi jaye toh login mat ruko
             
         return True, "OK"
 
     except ChallengeRequired:
-        return False, "CHALLENGE REQUIRED — Manual verification needed"
+        return False, "CHALLENGE REQUIRED — Instagram wants verification (Manual login needed)"
     except PleaseWaitFewMinutes:
-        return False, "RATE LIMITED — Wait 10 mins"
+        return False, "RATE LIMITED — Too many attempts. Wait 10 mins"
     except RateLimitError:
-        return False, "RATE LIMIT EXCEEDED"
+        return False, "RATE LIMIT EXCEEDED — Daily limit reached"
     except LoginRequired:
-        return False, "COOKIES EXPIRED"
+        return False, "COOKIES EXPIRED — Please get new cookies"
     except ClientError as e:
         return False, f"CLIENT ERROR: {str(e)[:100]}"
     except requests.exceptions.Timeout:
-        return False, "TIMEOUT — IP Blocked or Slow Network"
+        return False, "TIMEOUT — Server too slow or IP Blocked"
     except Exception as e:
         return False, f"UNKNOWN ERROR: {str(e)[:100]}"
 
@@ -139,13 +148,12 @@ def send_messages_from_client(cookie_line, thread_id, messages, delay, sender_na
             final_msg = f"{sender_name} {msg}" if (sender_name and sender_name.strip()) else msg
             
             # ⭐ TYPING SIMULATION LOGIC ⭐
-            # Insaan 1 letter type karne mein approx 0.1 sec leta hai.
-            # Agar message 50 words ka hai (approx 250 letters), toh 25 sec lagega.
-            # Hum maximum 10 second tak simulate karenge taaki server hang na lage.
+            # Insaan 1 letter type karne mein approx 0.05 sec leta hai.
+            # Agar message lamba hai, toh zyada der rukega (max 10 sec).
             typing_time = min(len(final_msg) * 0.05, 10.0) 
             
             log(f"⌨️ [ID {idx}] Typing simulation for {typing_time:.1f}s...")
-            time.sleep(typing_time) # Yahan script rukegi jaise koi type kar raha ho
+            time.sleep(typing_time) 
             # ---------------------------------
 
             max_retries = 4
@@ -154,9 +162,11 @@ def send_messages_from_client(cookie_line, thread_id, messages, delay, sender_na
             for attempt in range(max_retries):
                 try:
                     try:
+                        # Try sending via thread_id
                         cl.direct_send(final_msg, thread_ids=[int(thread_id)])
                     except Exception as e:
                         if "thread" in str(e).lower() or "not found" in str(e).lower():
+                            # Fallback to user_id if thread_id fails
                             cl.direct_send(final_msg, user_ids=[int(thread_id)])
                         else:
                             raise e 
@@ -187,6 +197,7 @@ def send_messages_from_client(cookie_line, thread_id, messages, delay, sender_na
                     log(f"❌ [ID {idx}] Attempt {attempt+1} error: {str(e)[:60]}")
                     time.sleep(10) 
 
+            # Result processing
             if success:
                 with lock:
                     state["totalSent"] += 1
@@ -209,6 +220,7 @@ def send_messages_from_client(cookie_line, thread_id, messages, delay, sender_na
         with lock:
             state["totalFailed"] += 1
     finally:
+        # ⭐ MEMORY MANAGEMENT (Render Free Tier ke liye zaroori)
         if cl:
             del cl
         gc.collect()
@@ -265,7 +277,7 @@ def start():
         cookies_raw = request.form.get("cookies", "").strip()
         run_mode = request.form.get("run_mode", "sequential")
         thread_id = request.form.get("thread_id", "").strip()
-        delay = int(request.form.get("time_delay", 60))
+        delay = int(request.form.get("time_delay", 60)) 
         sender_name = request.form.get("sender_name", "").strip()
 
         message_file = request.files.get("message_file")
@@ -310,7 +322,7 @@ def status():
             "isRunning": state["isRunning"],
             "totalSent": state["totalSent"],
             "totalFailed": state["totalFailed"],
-            "logs": state["logs"][-150:],
+            "logs": state["logs"][-150:], 
         })
 
 # ---------------- RENDER KEEP ALIVE ----------------
@@ -325,7 +337,9 @@ def keep_alive():
     
     while True:
         try:
-            requests.get(url, timeout=20)
+            res = requests.get(url, timeout=20)
+            if res.status_code == 200:
+                pass 
         except Exception:
             pass 
         time.sleep(240) 
