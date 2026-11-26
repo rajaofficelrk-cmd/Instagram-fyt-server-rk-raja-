@@ -8,7 +8,8 @@ from flask import Flask, render_template, request, jsonify
 from instagrapi import Client
 from instagrapi.exceptions import (
     LoginRequired, PleaseWaitFewMinutes, ChallengeRequired,
-    RateLimitError, ClientError
+    RateLimitError, ClientError, ClientForbiddenError, 
+    ClientThrottledError, ClientLoginRequired
 )
 
 app = Flask(__name__)
@@ -65,8 +66,8 @@ def parse_cookies_smart(raw_text):
 # ---------------- CLIENT BUILDER ----------------
 def make_client(cookie_str):
     cl = Client()
-    cl.request_timeout = 30
-    cl.delay_range = [1, 2]
+    cl.request_timeout = 45  # Thoda time badhaya taaki network issue na ho
+    cl.delay_range = [2, 4]  # Anti-spam delay
     cl.set_settings({
         "user_agent": "Instagram 219.0.0.12.117 Android",
     })
@@ -86,21 +87,21 @@ def login_and_validate(cl, cookie_str):
         return True, "ok"
 
     except ChallengeRequired:
-        return False, "CHALLENGE REQUIRED"
+        return False, "CHALLENGE REQUIRED — manual login needed"
     except PleaseWaitFewMinutes:
-        return False, "RATE LIMITED"
+        return False, "RATE LIMITED — wait 5-10 min"
     except RateLimitError:
-        return False, "RATE LIMIT"
+        return False, "RATE LIMIT — too many requests"
     except LoginRequired:
         return False, "COOKIES EXPIRED"
     except ClientError as e:
         return False, f"CLIENT ERROR: {str(e)[:100]}"
     except requests.exceptions.Timeout:
-        return False, "TIMEOUT — IP blocked"
+        return False, "TIMEOUT — IP blocked by Instagram or slow network"
     except Exception as e:
         return False, f"UNKNOWN: {str(e)[:100]}"
 
-# ---------------- MESSAGE SENDER ----------------
+# ---------------- BULLETPROOF MESSAGE SENDER ----------------
 def send_messages_from_client(cookie_line, thread_id, messages, delay, sender_name, idx):
     cl = None
     try:
@@ -114,35 +115,66 @@ def send_messages_from_client(cookie_line, thread_id, messages, delay, sender_na
                 state["totalFailed"] += 1
             return
 
-        log(f"✅ [ID {idx}] Logged in! Sending messages...")
+        log(f"✅ [ID {idx}] Logged in as user_id={cl.user_id}")
 
-        # ⭐ YAHAN CHANGE HUA HAI: Ab Here Name alag se nahi jayega, sath me jayega
         for i, msg in enumerate(messages, 1):
             if state["stop_flag"]:
                 log(f"🛑 [ID {idx}] Stop flag received. Exiting.")
                 return
             
-            # Here Name aur File ka message jod diya
-            if sender_name and sender_name.strip() != "":
-                final_msg = f"{sender_name} {msg}"
-            else:
-                final_msg = msg
+            final_msg = f"{sender_name} {msg}" if (sender_name and sender_name.strip()) else msg
+            
+            # Retry Logic: Max 3 attempts per message
+            max_retries = 3
+            success = False
+            
+            for attempt in range(max_retries):
+                try:
+                    # 1. Primary Method: Thread ID
+                    cl.direct_send(final_msg, thread_ids=[int(thread_id)])
+                    success = True
+                    break
 
-            try:
-                cl.direct_send(final_msg, thread_ids=[int(thread_id)])
+                except (ClientForbiddenError, ClientThrottledError, PleaseWaitFewMinutes, RateLimitError) as e:
+                    # 2. Specific error handling (403/429/Spam block)
+                    wait_time = (attempt + 1) * 10
+                    log(f"⚠️ [ID {idx}] Attempt {attempt+1} failed ({type(e).__name__}). Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                    
+                    # Thoda session refresh karo
+                    try:
+                        cl.get_timeline_feed() 
+                    except Exception:
+                        pass
+                
+                except ClientLoginRequired:
+                    log(f"🔄 [ID {idx}] Session expired during send. Re-logging in...")
+                    ok, _ = login_and_validate(cl, cookie_line)
+                    if not ok:
+                        break
+                        
+                except Exception as e:
+                    # Generic error (e.g. Thread ID galat hai)
+                    log(f"❌ [ID {idx}] Attempt {attempt+1} unexpected error: {str(e)[:80]}")
+                    time.sleep(5)
+                    
+                    # 3. Fallback Method: User ID (Agar Thread ID kaam nahi kar raha)
+                    try:
+                        cl.direct_send(final_msg, user_ids=[int(thread_id)])
+                        log(f"✅ [ID {idx}] Sent via User ID Fallback!")
+                        success = True
+                        break
+                    except Exception as fallback_e:
+                        log(f"❌ [ID {idx}] Fallback also failed: {str(fallback_e)[:50]}")
+
+            if success:
                 with lock:
                     state["totalSent"] += 1
                 log(f"✅ [ID {idx}] Sent {i}/{len(messages)}: {final_msg[:40]}...")
-                
-            except PleaseWaitFewMinutes:
-                log(f"⚠️ [ID {idx}] Rate limited. Sleeping 60s...")
-                time.sleep(60)
+            else:
                 with lock:
                     state["totalFailed"] += 1
-            except Exception as e:
-                with lock:
-                    state["totalFailed"] += 1
-                log(f"❌ [ID {idx}] Failed: {str(e)[:80]}")
+                log(f"❌ [ID {idx}] Failed {i}/{len(messages)} after {max_retries} attempts.")
             
             time.sleep(delay)
 
@@ -222,9 +254,9 @@ def start():
             raise ValueError("Koi valid 'sessionid' nahi mila!")
 
         if not thread_id.isdigit():
-            raise ValueError("Invalid thread_id")
+            raise ValueError("Invalid thread_id (sirf numbers daalo)")
 
-        log(f"📁 Total {len(cookie_lines)} IDs found. Mode: {run_mode.upper()}")
+        log(f"📁 Total {len(cookie_lines)} valid IDs found. Mode: {run_mode.upper()}")
 
         target = run_parallel if run_mode == "parallel" else run_sequential
         threading.Thread(target=target, args=(cookie_lines, thread_id, messages, delay, sender_name), daemon=True).start()
@@ -269,7 +301,7 @@ def keep_alive():
             requests.get(url, timeout=15)
         except Exception:
             pass
-        time.sleep(300) # 5 minutes
+        time.sleep(240) # Har 4 minute mein ping karega
 
 if __name__ == "__main__":
     threading.Thread(target=keep_alive, daemon=True).start()
