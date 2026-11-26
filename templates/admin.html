@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - RK RAJA</title>
+    <style>
+        :root { --bg: #0a0a0a; --card: #151515; --border: #333; --text: #00ffcc; --accent: #ff0055; --green: #00ff66; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Courier New', monospace; }
+        body { background: var(--bg); color: var(--text); padding: 20px; }
+        h1 { text-align: center; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 20px; text-shadow: 0 0 10px var(--text); }
+        .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+        .panel { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border); }
+        th { color: #fff; background: #222; }
+        .status-active { color: var(--green); font-weight: bold; }
+        .status-failed { color: var(--accent); font-weight: bold; }
+        .terminal { height: 400px; overflow-y: auto; background: #000; padding: 10px; font-size: 12px; border-left: 3px solid var(--text); }
+        .terminal div { margin-bottom: 4px; }
+    </style>
+</head>
+<body>
+    <h1>👑 Admin Live Dashboard</h1>
+    <div class="grid">
+        <div class="panel">
+            <h2>Live Accounts</h2>
+            <table id="accountsTable">
+                <thead>
+                    <tr>
+                        <th>ID Name</th>
+                        <th>UID</th>
+                        <th>Status</th>
+                        <th>Sent</th>
+                        <th>Failed</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <div class="panel">
+            <h2>Live Logs</h2>
+            <div class="terminal" id="terminal"></div>
+        </div>
+    </div>
+
+    <script>
+        async function fetchAdminData() {
+            try {
+                const res = await fetch('/api/admin_status');
+                const data = await res.json();
+                
+                const tbody = document.querySelector('#accountsTable tbody');
+                tbody.innerHTML = '';
+                
+                for (const [key, acc] of Object.entries(data.active_accounts)) {
+                    const tr = document.createElement('tr');
+                    const statusClass = acc.status.includes('Failed') || acc.status.includes('Blocked') ? 'status-failed' : 'status-active';
+                    tr.innerHTML = `
+                        <td>${acc.name}</td>
+                        <td>${acc.uid}</td>
+                        <td class="${statusClass}">${acc.status}</td>
+                        <td style="color:var(--green)">${acc.sent}</td>
+                        <td style="color:var(--accent)">${acc.failed}</td>
+                    `;
+                    tbody.appendChild(tr);
+                }
+
+                const terminal = document.getElementById('terminal');
+                terminal.innerHTML = data.logs.map(log => `<div>> ${log}</div>`).join('');
+                terminal.scrollTop = terminal.scrollHeight;
+            } catch(e) {}
+        }
+        setInterval(fetchAdminData, 2000);
+        fetchAdminData();
+    </script>
+</body>
+</html>
