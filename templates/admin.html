@@ -3,43 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - RK RAJA</title>
+    <title>👑 Admin Live Dashboard</title>
     <style>
-        :root { --bg: #0a0a0a; --card: #151515; --border: #333; --text: #00ffcc; --accent: #ff0055; --green: #00ff66; }
+        :root { --bg: #050505; --card: #111; --border: #333; --text: #e0e0e0; --neon: #00f3ff; --pink: #ff007f; --green: #00ff66; }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Courier New', monospace; }
         body { background: var(--bg); color: var(--text); padding: 20px; }
-        h1 { text-align: center; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 20px; text-shadow: 0 0 10px var(--text); }
-        .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+        h1 { text-align: center; color: var(--neon); margin-bottom: 20px; text-shadow: 0 0 10px var(--neon); }
+        .top-bar { display: flex; justify-content: space-between; background: var(--card); padding: 15px; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 20px; }
+        .top-bar div { font-size: 14px; }
+        .top-bar span { color: var(--pink); font-weight: bold; }
+        .grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; }
         .panel { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border); }
-        th { color: #fff; background: #222; }
-        .status-active { color: var(--green); font-weight: bold; }
-        .status-failed { color: var(--accent); font-weight: bold; }
-        .terminal { height: 400px; overflow-y: auto; background: #000; padding: 10px; font-size: 12px; border-left: 3px solid var(--text); }
-        .terminal div { margin-bottom: 4px; }
+        h2 { font-size: 16px; color: var(--neon); margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 5px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #222; font-size: 13px; }
+        th { color: #fff; background: #1a1a1a; }
+        .status-active { color: var(--green); }
+        .status-failed { color: #ff3333; }
+        .terminal { height: 400px; overflow-y: auto; background: #000; padding: 10px; font-size: 12px; border-left: 3px solid var(--neon); }
+        .users-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .user-tag { background: #222; padding: 5px 10px; border-radius: 15px; font-size: 12px; border: 1px solid #444; }
     </style>
 </head>
 <body>
     <h1>👑 Admin Live Dashboard</h1>
+    
+    <div class="top-bar">
+        <div>Target Thread/GC: <span id="threadId">Loading...</span></div>
+        <div>Message File: <span id="fileName">Loading...</span></div>
+        <div>Status: <span id="sysStatus">Loading...</span></div>
+    </div>
+
     <div class="grid">
         <div class="panel">
-            <h2>Live Accounts</h2>
+            <h2>📊 Running Accounts</h2>
             <table id="accountsTable">
-                <thead>
-                    <tr>
-                        <th>ID Name</th>
-                        <th>UID</th>
-                        <th>Status</th>
-                        <th>Sent</th>
-                        <th>Failed</th>
-                    </tr>
-                </thead>
+                <thead><tr><th>Name</th><th>UID</th><th>Status</th><th>Sent</th><th>Failed</th></tr></thead>
                 <tbody></tbody>
             </table>
+            
+            <h2 style="margin-top: 30px;">👥 Users in this GC/DM</h2>
+            <div class="users-list" id="gcUsers"><div style="color:#888;">Waiting for data...</div></div>
         </div>
+        
         <div class="panel">
-            <h2>Live Logs</h2>
+            <h2>📜 Live Logs</h2>
             <div class="terminal" id="terminal"></div>
         </div>
     </div>
@@ -47,21 +55,30 @@
     <script>
         async function fetchAdminData() {
             try {
-                const res = await fetch('/api/admin_status');
+                const res = await fetch('/api/admin_status', { cache: 'no-store' });
                 const data = await res.json();
                 
+                document.getElementById('threadId').innerText = data.target_thread || "None";
+                document.getElementById('fileName').innerText = data.message_file || "None";
+                document.getElementById('sysStatus').innerText = data.isRunning ? "RUNNING" : "IDLE";
+                document.getElementById('sysStatus').style.color = data.isRunning ? "var(--green)" : "var(--pink)";
+
+                const usersDiv = document.getElementById('gcUsers');
+                if (data.gc_users && data.gc_users.length > 0) {
+                    usersDiv.innerHTML = data.gc_users.map(u => `<div class="user-tag">${u}</div>`).join('');
+                }
+
                 const tbody = document.querySelector('#accountsTable tbody');
                 tbody.innerHTML = '';
-                
                 for (const [key, acc] of Object.entries(data.active_accounts)) {
                     const tr = document.createElement('tr');
-                    const statusClass = acc.status.includes('Failed') || acc.status.includes('Blocked') ? 'status-failed' : 'status-active';
+                    const isErr = acc.status.includes('Failed') || acc.status.includes('Blocked') || acc.status.includes('Crashed');
                     tr.innerHTML = `
                         <td>${acc.name}</td>
                         <td>${acc.uid}</td>
-                        <td class="${statusClass}">${acc.status}</td>
+                        <td class="${isErr ? 'status-failed' : 'status-active'}">${acc.status}</td>
                         <td style="color:var(--green)">${acc.sent}</td>
-                        <td style="color:var(--accent)">${acc.failed}</td>
+                        <td style="color:#ff3333">${acc.failed}</td>
                     `;
                     tbody.appendChild(tr);
                 }
@@ -71,6 +88,7 @@
                 terminal.scrollTop = terminal.scrollHeight;
             } catch(e) {}
         }
+        
         setInterval(fetchAdminData, 2000);
         fetchAdminData();
     </script>
